@@ -82,24 +82,13 @@
             white-space: pre-wrap; /* Preserve whitespace but wrap text */
             word-wrap: break-word; /* Break words when needed */
             word-break: break-word; /* Break words at appropriate points */
+            box-sizing: border-box; /* Ensure padding is included in height */
+            width: 100%;
         }
         
         .sticker-content[contenteditable="true"] {
             outline: none;
             border: 1px dashed rgba(0, 0, 0, 0.2);
-        }
-        
-        .sticker-resize {
-            position: absolute;
-            bottom: 0;
-            right: 0;
-            width: 16px;
-            height: 16px;
-            cursor: ew-resize; /* Change cursor to indicate horizontal-only resize */
-            background-color: rgba(0, 0, 0, 0.1);
-            border-top-left-radius: 3px;
-            -webkit-app-region: no-drag; /* Make resizable */
-            z-index: 10;
         }
         
         .sticker-content:empty::before {
@@ -116,7 +105,6 @@
             <button class="sticker-close">×</button>
         </div>
         <div class="sticker-content" contenteditable="true"></div>
-        <div class="sticker-resize"></div>
     </div>
     
     <script>
@@ -124,7 +112,6 @@
         const sticker = document.querySelector('.sticker');
         const closeBtn = document.querySelector('.sticker-close');
         const content = document.querySelector('.sticker-content');
-        const resizeHandle = document.querySelector('.sticker-resize');
         
         // Ensure elements are visible immediately
         if (closeBtn) {
@@ -132,7 +119,6 @@
             closeBtn.style.visibility = 'visible';
             closeBtn.style.opacity = '1';
         }
-        if (resizeHandle) resizeHandle.style.display = 'block';
         
         // Sticker data
         let stickerData = {
@@ -142,24 +128,28 @@
             size: { width: 250, height: 80 }
         };
         
+        // Set initial size explicitly to match default
+        document.body.style.width = `${stickerData.size.width}px`;
+        document.body.style.height = `${stickerData.size.height}px`;
+        
         // Receive sticker data from main process
         window.stickerAPI.onStickerData(data => {
             stickerData = data;
             content.innerHTML = data.content || '';
             
-            // Apply width, but height will be determined by content
+            // Apply width and height directly
             if (data.size) {
                 document.body.style.width = `${data.size.width}px`;
-                adjustHeight();
+                document.body.style.height = `${data.size.height}px`;
+                adjustHeight(); // Still adjust height for content if needed
             }
             
-            // Ensure close button and resize handle are visible after loading data
+            // Ensure close button is visible after loading data
             if (closeBtn) {
                 closeBtn.style.display = 'flex';
                 closeBtn.style.visibility = 'visible';
                 closeBtn.style.opacity = '1';
             }
-            if (resizeHandle) resizeHandle.style.display = 'block';
             
             // Force a small delay to ensure UI is updated
             setTimeout(() => {
@@ -172,16 +162,45 @@
         
         // Function to adjust height based on content
         function adjustHeight() {
-            const contentHeight = content.scrollHeight;
-            const headerHeight = 40; // Header height + padding
-            const padding = 20; // Extra padding
+            // If no content, use minimum height
+            if (!content.innerText.trim()) {
+                const minHeight = 80; // Minimum sticker height
+                document.body.style.height = `${minHeight}px`;
+                stickerData.size.height = minHeight;
+                window.resizeTo(parseInt(document.body.style.width), minHeight);
+                return;
+            }
             
-            // Set window height to fit content exactly
-            const newHeight = contentHeight + headerHeight + padding;
+            // Create a temporary clone to measure accurate line height
+            const clone = content.cloneNode(true);
+            clone.style.position = 'absolute';
+            clone.style.visibility = 'hidden';
+            clone.style.width = content.clientWidth + 'px';
+            clone.style.height = 'auto';
+            clone.style.whiteSpace = 'pre-wrap';
+            document.body.appendChild(clone);
+            
+            // Calculate lines of text
+            const lineHeight = parseInt(window.getComputedStyle(content).lineHeight) || 20;
+            
+            // Get actual rendered height of content
+            const actualHeight = clone.clientHeight;
+            
+            // Calculate appropriate height based on actual content 
+            const headerHeight = 36; // Header height
+            const contentPadding = 20; // Content padding (10px top + 10px bottom)
+            const extraPadding = 2; // Extra space to prevent cutting off text
+            
+            // Calculate the total height needed
+            const newHeight = headerHeight + actualHeight + contentPadding + extraPadding;
+            
+            // Remove the clone
+            document.body.removeChild(clone);
+            
+            // Set the height
             document.body.style.height = `${newHeight}px`;
-            
-            // Update size data
             stickerData.size.height = newHeight;
+            window.resizeTo(parseInt(document.body.style.width), newHeight);
         }
         
         // Close button click
@@ -197,16 +216,17 @@
         
         // Content change
         content.addEventListener('input', () => {
-            adjustHeight();
+            // Use a small delay to allow the browser to render the content
+            setTimeout(adjustHeight, 0);
         });
         
         content.addEventListener('blur', () => {
             stickerData.content = content.innerHTML;
             
-            // Update size based on current dimensions
+            // Update size based on precise measurements
             stickerData.size = {
-                width: window.innerWidth,
-                height: window.innerHeight
+                width: parseInt(document.body.style.width),
+                height: parseInt(document.body.style.height)
             };
             
             saveSticker();
@@ -222,6 +242,11 @@
         
         // Handle window resize for sticker size
         function handleWindowResize() {
+            // Set body size to match window
+            document.body.style.width = `${window.innerWidth}px`;
+            document.body.style.height = `${window.innerHeight}px`;
+            
+            // Update size data with exact values
             stickerData.size = {
                 width: window.innerWidth,
                 height: window.innerHeight
@@ -234,34 +259,6 @@
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(handleWindowResize, 300);
-        });
-        
-        // Manual resize functionality - width only
-        let isResizing = false;
-        let originalWidth, originalMouseX;
-        
-        resizeHandle.addEventListener('mousedown', (e) => {
-            isResizing = true;
-            originalWidth = window.innerWidth;
-            originalMouseX = e.pageX;
-            e.preventDefault();
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (!isResizing) return;
-            
-            const width = originalWidth + (e.pageX - originalMouseX);
-            
-            if (width > 150) {
-                window.resizeTo(width, window.innerHeight);
-            }
-        });
-        
-        document.addEventListener('mouseup', () => {
-            if (isResizing) {
-                isResizing = false;
-                handleWindowResize();
-            }
         });
         
         // Handle window move to track position
