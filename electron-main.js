@@ -172,8 +172,12 @@ function createSimpleControlWindow() {
 }
 
 function createStickerWindow(stickerData = null) {
-  // Get screen dimensions
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  // Get all available displays
+  const displays = screen.getAllDisplays();
+  
+  // Determine which display to use (prefer second display if available)
+  const targetDisplay = displays.length > 1 ? displays[1] : displays[0];
+  const workArea = targetDisplay.workArea;
   
   let x, y;
   const GRID_SIZE = 20;
@@ -184,6 +188,23 @@ function createStickerWindow(stickerData = null) {
     // Use position from sticker data
     x = stickerData.position.x;
     y = stickerData.position.y;
+    
+    // Check if the sticker is on any display
+    let onAnyDisplay = false;
+    for (const display of displays) {
+      const bounds = display.bounds;
+      if (x >= bounds.x && x < bounds.x + bounds.width &&
+          y >= bounds.y && y < bounds.y + bounds.height) {
+        onAnyDisplay = true;
+        break;
+      }
+    }
+    
+    // If not on any display, adjust to target display
+    if (!onAnyDisplay) {
+      x = workArea.x + GRID_SIZE;
+      y = workArea.y + GRID_SIZE;
+    }
   } else {
     // Get current stickers count for position calculation
     let existingStickers = [];
@@ -196,12 +217,20 @@ function createStickerWindow(stickerData = null) {
       }
     }
     
+    // Filter stickers that are on the target display
+    const stickersOnTargetDisplay = existingStickers.filter(sticker => {
+      const stickerX = sticker.position.x;
+      const stickerY = sticker.position.y;
+      return stickerX >= workArea.x && stickerX < workArea.x + workArea.width &&
+             stickerY >= workArea.y && stickerY < workArea.y + workArea.height;
+    });
+    
     // Also check current active sticker windows to ensure proper stacking
     let lowestY = 0;
     
-    // First check existing stickers from file
-    if (existingStickers.length > 0) {
-      existingStickers.forEach(sticker => {
+    // First check existing stickers from file that are on this display
+    if (stickersOnTargetDisplay.length > 0) {
+      stickersOnTargetDisplay.forEach(sticker => {
         const bottom = sticker.position.y + (sticker.size?.height || stickerHeight);
         if (bottom > lowestY) {
           lowestY = bottom;
@@ -209,34 +238,39 @@ function createStickerWindow(stickerData = null) {
       });
     }
     
-    // Now check active sticker windows (these may not be saved yet)
+    // Now check active sticker windows that are on this display
     if (stickerWindows.size > 0) {
       stickerWindows.forEach(win => {
         if (win && !win.isDestroyed()) {
           const [winX, winY] = win.getPosition();
-          const [winWidth, winHeight] = win.getSize();
-          const bottom = winY + winHeight;
           
-          if (bottom > lowestY) {
-            lowestY = bottom;
+          // Check if this sticker is on the target display
+          if (winX >= workArea.x && winX < workArea.x + workArea.width &&
+              winY >= workArea.y && winY < workArea.y + workArea.height) {
+            const [winWidth, winHeight] = win.getSize();
+            const bottom = winY + winHeight;
+            
+            if (bottom > lowestY) {
+              lowestY = bottom;
+            }
           }
         }
       });
     }
     
     if (lowestY === 0) {
-      // First sticker - center it horizontally
-      x = Math.round((width / 2 - stickerWidth / 2) / GRID_SIZE) * GRID_SIZE;
-      y = GRID_SIZE;
+      // First sticker on this display - position at top-left with padding
+      x = workArea.x + GRID_SIZE;
+      y = workArea.y + GRID_SIZE;
     } else {
       // Position the new sticker below the lowest one with padding
-      x = Math.round((width / 2 - stickerWidth / 2) / GRID_SIZE) * GRID_SIZE;
+      x = workArea.x + GRID_SIZE;
       y = Math.round((lowestY + GRID_SIZE) / GRID_SIZE) * GRID_SIZE;
     }
     
     // Ensure we're not placing stickers off-screen
-    x = Math.min(x, width - stickerWidth);
-    y = Math.min(y, height - stickerHeight);
+    x = Math.min(x, workArea.x + workArea.width - stickerWidth);
+    y = Math.min(y, workArea.y + workArea.height - stickerHeight);
   }
   
   // Set initial size based on whether this is a new or existing sticker
@@ -485,16 +519,14 @@ ipcMain.handle('realign-stickers', () => {
   return { success: true };
 });
 
-// Function to realign all stickers in a grid-like fashion
+// Function to realign stickers in a vertical-first layout with multi-screen support
 function realignStickers() {
-  const { width } = screen.getPrimaryDisplay().workAreaSize;
   const GRID_SIZE = 20;
-  const stickerWidth = 250;
-  const stickerHeight = 80;
   
-  let y = GRID_SIZE; // Start from top with padding
+  // Get all available displays
+  const displays = screen.getAllDisplays();
   
-  // Get all sticker windows and organize them
+  // Get all sticker windows
   const validStickers = [];
   stickerWindows.forEach(win => {
     if (win && !win.isDestroyed()) {
@@ -502,18 +534,83 @@ function realignStickers() {
     }
   });
   
-  // Organize stickers vertically
-  validStickers.forEach((win, index) => {
-    // Center stickers horizontally
-    const x = Math.round((width / 2 - stickerWidth / 2) / GRID_SIZE) * GRID_SIZE;
+  // Group stickers by the display they're currently on
+  const stickersByDisplay = {};
+  
+  validStickers.forEach(win => {
+    const [winX, winY] = win.getPosition();
     
-    // Set position
-    win.setPosition(x, y);
+    // Determine which display this sticker is on
+    let targetDisplay = null;
+    for (const display of displays) {
+      const bounds = display.bounds;
+      if (winX >= bounds.x && winX < bounds.x + bounds.width &&
+          winY >= bounds.y && winY < bounds.y + bounds.height) {
+        targetDisplay = display;
+        break;
+      }
+    }
     
-    // Get the size of the current sticker for proper spacing
-    const [winWidth, winHeight] = win.getSize();
+    // If sticker isn't on any display, assign it to the default display (second if available)
+    if (!targetDisplay) {
+      targetDisplay = displays.length > 1 ? displays[1] : displays[0];
+    }
     
-    // Move down for the next sticker with spacing
-    y += winHeight + GRID_SIZE;
+    const displayId = targetDisplay.id;
+    if (!stickersByDisplay[displayId]) {
+      stickersByDisplay[displayId] = [];
+    }
+    
+    stickersByDisplay[displayId].push(win);
+  });
+  
+  // Process each display separately
+  displays.forEach(display => {
+    const displayId = display.id;
+    const stickersOnDisplay = stickersByDisplay[displayId] || [];
+    
+    if (stickersOnDisplay.length === 0) return;
+    
+    // Get display work area (accounts for taskbar, etc.)
+    const workArea = screen.getDisplayMatching(display.bounds).workArea;
+    const maxHeight = workArea.height - 100; // Leave some space at the bottom
+    
+    // Sort stickers on this display by their vertical position (top to bottom)
+    stickersOnDisplay.sort((a, b) => {
+      const [aX, aY] = a.getPosition();
+      const [bX, bY] = b.getPosition();
+      return aY - bY;
+    });
+    
+    // Get the horizontal position of the first (topmost) sticker
+    const [firstStickerX, firstStickerY] = stickersOnDisplay[0].getPosition();
+    
+    // Use the horizontal position of the first sticker as the alignment point
+    let baseX = firstStickerX;
+    let currentY = workArea.y + GRID_SIZE;
+    let maxWidthInColumn = 0;
+    
+    // Position each sticker on this display
+    stickersOnDisplay.forEach((win, index) => {
+      // Get the size of the current sticker
+      const [winWidth, winHeight] = win.getSize();
+      
+      // If adding this sticker would exceed the screen height, move to the next column
+      if (currentY + winHeight > workArea.y + maxHeight && index > 0) {
+        // Move to the next column, but maintain the same horizontal alignment as the first sticker
+        baseX += maxWidthInColumn + GRID_SIZE;
+        currentY = workArea.y + GRID_SIZE;
+        maxWidthInColumn = 0;
+      }
+      
+      // Set position - use the same x-coordinate as the first sticker (or offset for additional columns)
+      win.setPosition(baseX, currentY);
+      
+      // Update the maximum width in the current column
+      maxWidthInColumn = Math.max(maxWidthInColumn, winWidth);
+      
+      // Move down for the next sticker
+      currentY += winHeight + GRID_SIZE;
+    });
   });
 } 
