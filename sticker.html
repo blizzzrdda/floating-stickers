@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sticker</title>
+    <style>
+        :root {
+            --sticker-bg: #ffffa5;
+            --text-color: #333;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: transparent;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sticker {
+            flex: 1;
+            background-color: var(--sticker-bg);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16);
+            border-radius: 3px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+        
+        .sticker-header {
+            padding: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: grab;
+            background-color: rgba(0, 0, 0, 0.05);
+            -webkit-app-region: drag; /* Make this area draggable for window positioning */
+        }
+        
+        .sticker-header:active {
+            cursor: grabbing;
+        }
+        
+        .sticker-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            color: #777;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            -webkit-app-region: no-drag; /* Make button clickable */
+        }
+        
+        .sticker-close:hover {
+            background-color: rgba(0, 0, 0, 0.1);
+            color: #333;
+        }
+        
+        .sticker-content {
+            padding: 10px;
+            min-height: 100px;
+            color: var(--text-color);
+            flex: 1;
+            -webkit-app-region: no-drag; /* Make content area editable */
+        }
+        
+        .sticker-content[contenteditable="true"] {
+            outline: none;
+            border: 1px dashed rgba(0, 0, 0, 0.2);
+        }
+        
+        .sticker-resize {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 16px;
+            height: 16px;
+            cursor: nwse-resize;
+            background-color: rgba(0, 0, 0, 0.1);
+            border-top-left-radius: 3px;
+            -webkit-app-region: no-drag; /* Make resizable */
+        }
+    </style>
+</head>
+<body>
+    <div class="sticker">
+        <div class="sticker-header">
+            <div class="sticker-drag-handle"></div>
+            <button class="sticker-close">×</button>
+        </div>
+        <div class="sticker-content" contenteditable="true"></div>
+        <div class="sticker-resize"></div>
+    </div>
+    
+    <script>
+        // Elements
+        const sticker = document.querySelector('.sticker');
+        const closeBtn = document.querySelector('.sticker-close');
+        const content = document.querySelector('.sticker-content');
+        const resizeHandle = document.querySelector('.sticker-resize');
+        
+        // Sticker data
+        let stickerData = {
+            id: Date.now().toString(),
+            content: '',
+            position: { x: 0, y: 0 },
+            size: { width: 250, height: 250 }
+        };
+        
+        // Receive sticker data from main process
+        window.stickerAPI.onStickerData(data => {
+            stickerData = data;
+            content.innerHTML = data.content || '';
+            
+            // Apply size if available
+            if (data.size) {
+                document.body.style.width = `${data.size.width}px`;
+                document.body.style.height = `${data.size.height}px`;
+            }
+        });
+        
+        // Close button click
+        closeBtn.addEventListener('click', () => {
+            window.stickerAPI.removeSticker(stickerData.id)
+                .then(() => {
+                    window.close();
+                })
+                .catch(err => {
+                    console.error('Failed to remove sticker:', err);
+                });
+        });
+        
+        // Content change
+        content.addEventListener('blur', () => {
+            stickerData.content = content.innerHTML;
+            saveSticker();
+        });
+        
+        // Save sticker data to main process
+        function saveSticker() {
+            window.stickerAPI.updateSticker(stickerData)
+                .catch(err => {
+                    console.error('Failed to update sticker:', err);
+                });
+        }
+        
+        // Handle window resize for sticker size
+        function handleWindowResize() {
+            stickerData.size = {
+                width: window.innerWidth,
+                height: window.innerHeight
+            };
+            saveSticker();
+        }
+        
+        // Delay resize event to avoid too many updates
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(handleWindowResize, 300);
+        });
+        
+        // Manual resize functionality
+        let isResizing = false;
+        let originalWidth, originalHeight, originalMouseX, originalMouseY;
+        
+        resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            originalWidth = window.innerWidth;
+            originalHeight = window.innerHeight;
+            originalMouseX = e.pageX;
+            originalMouseY = e.pageY;
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            const width = originalWidth + (e.pageX - originalMouseX);
+            const height = originalHeight + (e.pageY - originalMouseY);
+            
+            if (width > 150 && height > 150) {
+                window.resizeTo(width, height);
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                handleWindowResize();
+            }
+        });
+        
+        // Handle window move to track position
+        let moveTimeout;
+        window.addEventListener('move', () => {
+            clearTimeout(moveTimeout);
+            moveTimeout = setTimeout(() => {
+                // We can't directly get window position, so we'll update it via IPC
+                // This gets updated when windows are manually moved
+                const pos = window.screenLeft !== undefined ? { x: window.screenLeft, y: window.screenTop } : { x: 0, y: 0 };
+                stickerData.position = pos;
+                saveSticker();
+            }, 300);
+        });
+    </script>
+</body>
+</html> 

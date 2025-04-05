@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FloatingStickers Control</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #2a2a3a;
+            color: white;
+            margin: 0;
+            padding: 15px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .control-panel {
+            width: 100%;
+            text-align: center;
+        }
+        
+        button {
+            background-color: #4a4a5e;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 8px 16px;
+            margin: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background-color: #5a5a6e;
+        }
+        
+        .note {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <!-- This is a fallback control interface when tray icon fails -->
+    <div class="control-panel">
+        <h3>FloatingStickers Control</h3>
+        <div>
+            <button id="add-sticker-btn">Add New Sticker</button>
+            <button id="show-all-btn">Show All</button>
+            <button id="hide-all-btn">Hide All</button>
+        </div>
+        <p class="note">
+            Note: This control panel is shown because the system tray icon could not be created.<br>
+            You can close this window and use the application menu instead.
+        </p>
+    </div>
+    
+    <script>
+        // IPC Communication with electron
+        document.addEventListener('DOMContentLoaded', () => {
+            const addStickerBtn = document.getElementById('add-sticker-btn');
+            const showAllBtn = document.getElementById('show-all-btn');
+            const hideAllBtn = document.getElementById('hide-all-btn');
+            
+            // Use electronAPI to communicate with main process
+            if (addStickerBtn) {
+                addStickerBtn.addEventListener('click', async () => {
+                    try {
+                        await window.electronAPI.createSticker();
+                        console.log('New sticker created');
+                    } catch (error) {
+                        console.error('Failed to create sticker:', error);
+                    }
+                });
+            }
+            
+            if (showAllBtn) {
+                showAllBtn.addEventListener('click', async () => {
+                    try {
+                        await window.electronAPI.showAllStickers();
+                        console.log('Showing all stickers');
+                    } catch (error) {
+                        console.error('Failed to show stickers:', error);
+                    }
+                });
+            }
+            
+            if (hideAllBtn) {
+                hideAllBtn.addEventListener('click', async () => {
+                    try {
+                        await window.electronAPI.hideAllStickers();
+                        console.log('Hiding all stickers');
+                    } catch (error) {
+                        console.error('Failed to hide stickers:', error);
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html> 

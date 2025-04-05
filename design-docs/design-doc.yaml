@@ -14,7 +14,7 @@ description: |
 # ----------------
 goals:
   - Provide a simple interface for capturing quick text notes.
-  - Allow notes to be freely positioned within the application window or screen.
+  - Notes are auto aligned to the grid.
   - Persist notes between application sessions.
   - Mimic the visual appearance of draggable cards/notes shown in the reference image.
 
@@ -33,8 +33,6 @@ features:
   - id: F04
     name: Note Deletion
     description: Each note has a visible control (e.g., an 'X' button) to close/delete it permanently.
-  - id: F05
-    name: Persistence
     description: The content, position (and potentially size/color) of all active notes are saved when the application closes and restored when it reopens.
 
 # 4. Technical Design
@@ -96,10 +94,6 @@ ui_ux:
 # 6. Future Enhancements (Optional)
 # ----------------
 futureEnhancements:
-  - Note Resizing (via drag handles)
-  - Customizable Note Colors
-  - Rich Text Formatting (Bold, Italic, Lists)
-  - Search / Filtering Notes
-  - Always-on-Top Mode (Desktop)
-  - Data Sync (Cloud backup/sync)
-  - Organization (Tagging, Grouping)
+  - Sticker auto-resizing
+  - Sticker categorization: debug, new feature, meeting notes, etc.
+  - Connect to discord channel. If debug, post to #dev-bugs. If new feature, post to #feature-requests on completion.
