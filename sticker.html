@@ -84,6 +84,8 @@
             word-break: break-word; /* Break words at appropriate points */
             box-sizing: border-box; /* Ensure padding is included in height */
             width: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Ensure consistent font */
+            font-size: 14px; /* Set standard font size */
         }
         
         .sticker-content[contenteditable="true"] {
@@ -104,7 +106,7 @@
             <div class="sticker-drag-handle"></div>
             <button class="sticker-close">×</button>
         </div>
-        <div class="sticker-content" contenteditable="true"></div>
+        <div class="sticker-content" contenteditable="true" spellcheck="false" data-plaintext-only="true"></div>
     </div>
     
     <script>
@@ -154,7 +156,8 @@
         // Receive sticker data from main process
         window.stickerAPI.onStickerData(data => {
             stickerData = data;
-            content.innerHTML = data.content || '';
+            // Use textContent instead of innerHTML to ensure only plain text
+            content.textContent = data.content || '';
             
             // Apply width and height directly
             if (data.size) {
@@ -240,12 +243,43 @@
         
         // Content change
         content.addEventListener('input', () => {
+            // Sanitize content to ensure only plain text
+            sanitizeContent();
+            
             // Use a small delay to allow the browser to render the content
             setTimeout(adjustHeight, 0);
         });
         
+        // Function to sanitize content and ensure only plain text
+        function sanitizeContent() {
+            if (content.innerHTML !== content.textContent) {
+                const plainText = content.textContent;
+                content.textContent = plainText;
+                
+                // Restore cursor position at the end
+                const range = document.createRange();
+                range.selectNodeContents(content);
+                range.collapse(false); // collapse to end
+                
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        }
+        
+        // Prevent formatting keyboard shortcuts
+        content.addEventListener('keydown', (event) => {
+            // Prevent common formatting shortcuts (Ctrl+B, Ctrl+I, Ctrl+U, etc.)
+            if ((event.ctrlKey || event.metaKey) && 
+                ['b', 'i', 'u', 'e', 'h', 'k', 'j', '1', '2', '3', '4', '5', '6'].includes(event.key.toLowerCase())) {
+                event.preventDefault();
+                return false;
+            }
+        });
+        
         content.addEventListener('blur', () => {
-            stickerData.content = content.innerHTML;
+            // Store the plain text content only
+            stickerData.content = content.textContent;
             
             // Update size based on precise measurements
             stickerData.size = {
@@ -254,6 +288,18 @@
             };
             
             saveSticker();
+        });
+        
+        // Prevent pasting formatted content
+        content.addEventListener('paste', (event) => {
+            // Prevent the default paste
+            event.preventDefault();
+            
+            // Get plain text from clipboard
+            const plainText = event.clipboardData.getData('text/plain');
+            
+            // Insert text at cursor position
+            document.execCommand('insertText', false, plainText);
         });
         
         // Save sticker data to main process

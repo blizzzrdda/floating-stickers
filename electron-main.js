@@ -361,7 +361,19 @@ async function loadSavedStickers() {
   try {
     if (fs.existsSync(stickersFilePath)) {
       const data = await fs.promises.readFile(stickersFilePath, 'utf8');
-      const stickers = JSON.parse(data);
+      let stickers = JSON.parse(data);
+      
+      // Sanitize sticker content to ensure only plain text
+      stickers = stickers.map(sticker => {
+        if (sticker.content && typeof sticker.content === 'string') {
+          // Strip HTML tags to get plain text
+          sticker.content = stripHtml(sticker.content);
+        }
+        return sticker;
+      });
+      
+      // Save the sanitized stickers back to file
+      await fs.promises.writeFile(stickersFilePath, JSON.stringify(stickers));
       
       // Create a window for each saved sticker
       stickers.forEach(sticker => {
@@ -371,6 +383,15 @@ async function loadSavedStickers() {
   } catch (error) {
     console.error('Error loading stickers:', error);
   }
+}
+
+// Function to strip HTML tags from content
+function stripHtml(html) {
+  if (!html) return '';
+  // Create a temporary DOM element
+  const tempElement = new (require('jsdom').JSDOM)('').window.document.createElement('div');
+  tempElement.innerHTML = html;
+  return tempElement.textContent || tempElement.innerText || '';
 }
 
 // Toggle visibility of all stickers
