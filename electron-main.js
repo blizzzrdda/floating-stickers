@@ -94,6 +94,12 @@ function createTray() {
           toggleStickersVisibility();
         } 
       },
+      { 
+        label: 'Re-align Stickers', 
+        click: () => {
+          realignStickers();
+        } 
+      },
       { type: 'separator' },
       { 
         label: 'Exit', 
@@ -137,6 +143,12 @@ function createSimpleControlWindow() {
             label: 'Toggle Visibility', 
             click: () => {
               toggleStickersVisibility();
+            } 
+          },
+          { 
+            label: 'Re-align Stickers', 
+            click: () => {
+              realignStickers();
             } 
           },
           { type: 'separator' },
@@ -290,6 +302,10 @@ app.whenReady().then(() => {
 
   globalShortcut.register('CommandOrControl+M', () => {
     toggleStickersVisibility();
+  });
+
+  globalShortcut.register('CommandOrControl+,', () => {
+    realignStickers();
   });
 
   app.on('activate', function () {
@@ -455,4 +471,43 @@ ipcMain.handle('hide-all-stickers', () => {
     }
   });
   return { success: true };
-}); 
+});
+
+// IPC for realigning stickers
+ipcMain.handle('realign-stickers', () => {
+  realignStickers();
+  return { success: true };
+});
+
+// Function to realign all stickers in a grid-like fashion
+function realignStickers() {
+  const { width } = screen.getPrimaryDisplay().workAreaSize;
+  const GRID_SIZE = 20;
+  const stickerWidth = 250;
+  const stickerHeight = 80;
+  
+  let y = GRID_SIZE; // Start from top with padding
+  
+  // Get all sticker windows and organize them
+  const validStickers = [];
+  stickerWindows.forEach(win => {
+    if (win && !win.isDestroyed()) {
+      validStickers.push(win);
+    }
+  });
+  
+  // Organize stickers vertically
+  validStickers.forEach((win, index) => {
+    // Center stickers horizontally
+    const x = Math.round((width / 2 - stickerWidth / 2) / GRID_SIZE) * GRID_SIZE;
+    
+    // Set position
+    win.setPosition(x, y);
+    
+    // Get the size of the current sticker for proper spacing
+    const [winWidth, winHeight] = win.getSize();
+    
+    // Move down for the next sticker with spacing
+    y += winHeight + GRID_SIZE;
+  });
+} 

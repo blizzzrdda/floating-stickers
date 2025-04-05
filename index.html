@@ -33,10 +33,24 @@
             cursor: pointer;
             font-weight: 500;
             transition: background-color 0.2s;
+            position: relative;
+            padding-right: 50px; /* Make room for the shortcut indicator */
         }
         
         button:hover {
             background-color: #5a5a6e;
+        }
+        
+        .shortcut {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+            padding: 2px 5px;
+            font-size: 11px;
+            color: #ccc;
         }
         
         .note {
@@ -51,9 +65,9 @@
     <div class="control-panel">
         <h3>FloatingStickers Control</h3>
         <div>
-            <button id="add-sticker-btn">Add New Sticker</button>
-            <button id="toggle-visibility-btn">Toggle Visibility</button>
-            <button id="align-stickers-btn">Re-align Stickers</button>
+            <button id="add-sticker-btn">Add New Sticker<span class="shortcut">Ctrl+N</span></button>
+            <button id="toggle-visibility-btn">Toggle Visibility<span class="shortcut">Ctrl+M</span></button>
+            <button id="align-stickers-btn">Re-align Stickers<span class="shortcut">Ctrl+,</span></button>
         </div>
         <p class="note">
             Note: This control panel is shown because the system tray icon could not be created.<br>

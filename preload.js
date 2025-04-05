@@ -31,5 +31,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Function to hide all stickers
   hideAllStickers: () => {
     return ipcRenderer.invoke('hide-all-stickers');
+  },
+  
+  // Function to realign stickers
+  realignStickers: () => {
+    return ipcRenderer.invoke('realign-stickers');
   }
 }); 
