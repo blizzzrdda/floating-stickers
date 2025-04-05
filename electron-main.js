@@ -185,18 +185,60 @@ function createStickerWindow(stickerData = null) {
   // Get screen dimensions
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   
-  // Default position if not provided
-  const defaultX = Math.floor(Math.random() * (width - 250));
-  const defaultY = Math.floor(Math.random() * (height - 250));
+  let x, y;
+  const GRID_SIZE = 20;
+  const stickerWidth = 250;
+  const stickerHeight = 80; // Header (40px) + single line of text (40px)
   
-  // Use position from sticker data or default
-  const x = stickerData?.position?.x || defaultX;
-  const y = stickerData?.position?.y || defaultY;
+  if (stickerData?.position) {
+    // Use position from sticker data
+    x = stickerData.position.x;
+    y = stickerData.position.y;
+  } else {
+    // Get current stickers count for position calculation
+    let existingStickers = [];
+    if (fs.existsSync(stickersFilePath)) {
+      try {
+        const data = fs.readFileSync(stickersFilePath, 'utf8');
+        existingStickers = JSON.parse(data);
+      } catch (error) {
+        console.error('Error reading stickers for positioning:', error);
+      }
+    }
+    
+    if (existingStickers.length === 0) {
+      // First sticker - center it horizontally
+      x = Math.round((width / 2 - stickerWidth / 2) / GRID_SIZE) * GRID_SIZE;
+      y = GRID_SIZE;
+    } else {
+      // Find the lowest sticker
+      let lowestY = 0;
+      existingStickers.forEach(sticker => {
+        const bottom = sticker.position.y + (sticker.size?.height || stickerHeight);
+        if (bottom > lowestY) {
+          lowestY = bottom;
+        }
+      });
+      
+      // Position the new sticker below the lowest one with padding
+      x = Math.round((width / 2 - stickerWidth / 2) / GRID_SIZE) * GRID_SIZE;
+      y = Math.round((lowestY + GRID_SIZE) / GRID_SIZE) * GRID_SIZE;
+    }
+    
+    // Ensure we're not placing stickers off-screen
+    x = Math.min(x, width - stickerWidth);
+    y = Math.min(y, height - stickerHeight);
+  }
+  
+  // Set initial size based on whether this is a new or existing sticker
+  const windowHeight = stickerData && stickerData.content ? 
+                      (stickerData.size?.height || 250) : // Use existing size or default
+                      stickerHeight; // Small height for new stickers with header
   
   // Create a frameless window for the sticker
   const stickerWindow = new BrowserWindow({
     width: 250,
-    height: 250,
+    height: windowHeight,
     x: x,
     y: y,
     frame: false, // No window frame
@@ -224,6 +266,14 @@ function createStickerWindow(stickerData = null) {
   stickerWindow.webContents.on('did-finish-load', () => {
     if (stickerData) {
       stickerWindow.webContents.send('sticker-data', stickerData);
+    } else {
+      // Send initial position data for new stickers
+      stickerWindow.webContents.send('sticker-data', {
+        id: stickerId,
+        content: '',
+        position: { x, y },
+        size: { width: 250, height: windowHeight }
+      });
     }
   });
   

@@ -110,8 +110,16 @@ body {
 
 .sticker-content {
     padding: 10px;
-    min-height: 100px;
+    min-height: 20px;
     color: var(--text-color);
+    overflow-y: auto;
+    max-height: calc(100% - 40px);
+}
+
+.sticker-content:empty::before {
+    content: 'Type here...';
+    color: #999;
+    font-style: italic;
 }
 
 .sticker-content[contenteditable="true"] {

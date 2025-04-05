@@ -7,6 +7,7 @@ A frameless desktop application that allows you to create and manage floating st
 - Create transparent, frameless sticky notes that float on your desktop
 - Notes persist between application restarts
 - Drag notes anywhere on your screen
+- Auto-alignment of new stickers in a vertical stack
 - Resize notes as needed
 - System tray icon for easy management
 - Minimal UI - no main application window
@@ -63,14 +64,15 @@ Before building the application, replace the `icon.txt` file with a proper `icon
 - HTML5
 - CSS3
 - JavaScript (Vanilla, no frameworks)
-- LocalStorage for persistence (web version)
 - Electron.js for desktop packaging
-- Node.js file system for persistence (desktop version)
+- Node.js file system for persistence
 
 ## Future Enhancements
 
-- Sticker auto-resizing
+- Sticker themes and colors
 - Sticker categorization (debug, new feature, meeting notes, etc.)
+- Keyboard shortcuts
+- Note grouping or folders
 - Connection to Discord channels for sharing stickers
 
 ## License

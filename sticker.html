@@ -17,12 +17,12 @@
         }
         
         body {
+            margin: 0;
+            padding: 0;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: transparent;
             overflow: hidden;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
+            min-height: 80px; /* Header (40px) + single line of text (40px) */
         }
         
         .sticker {
@@ -70,11 +70,12 @@
         }
         
         .sticker-content {
-            padding: 10px;
-            min-height: 100px;
-            color: var(--text-color);
             flex: 1;
-            -webkit-app-region: no-drag; /* Make content area editable */
+            padding: 10px;
+            outline: none;
+            min-height: 20px;
+            overflow-y: auto;
+            max-height: calc(100vh - 40px); /* Allow scrolling for large content */
         }
         
         .sticker-content[contenteditable="true"] {
@@ -92,6 +93,12 @@
             background-color: rgba(0, 0, 0, 0.1);
             border-top-left-radius: 3px;
             -webkit-app-region: no-drag; /* Make resizable */
+        }
+        
+        .sticker-content:empty::before {
+            content: 'Type here...';
+            color: #999;
+            font-style: italic;
         }
     </style>
 </head>
@@ -144,8 +151,23 @@
         });
         
         // Content change
+        content.addEventListener('input', () => {
+            // Automatically grow height when content added
+            if (content.innerHTML && content.innerHTML.trim() !== '') {
+                const newHeight = Math.max(100, content.scrollHeight + 40); // 40px for header + padding
+                document.body.style.height = `${newHeight}px`;
+            }
+        });
+        
         content.addEventListener('blur', () => {
             stickerData.content = content.innerHTML;
+            
+            // Update size based on current dimensions
+            stickerData.size = {
+                width: window.innerWidth,
+                height: window.innerHeight
+            };
+            
             saveSticker();
         });
         

@@ -1,12 +1,12 @@
 # Design Document: Floating Sticker App
-# Version: 0.1.0
+# Version: 0.2.0
 # Date: 2025-04-05
 
 # 1. Overview
 # ----------------
 projectName: FloatingStickers
 description: |
-  A desktop or web application allowing users to create, manage,
+  A desktop application allowing users to create, manage,
   and position multiple independent "sticky notes" or "stickers"
   containing text. Inspired by the user-provided reference image.
 
@@ -14,7 +14,7 @@ description: |
 # ----------------
 goals:
   - Provide a simple interface for capturing quick text notes.
-  - Notes are auto aligned to the grid.
+  - Notes are auto aligned vertically when created.
   - Persist notes between application sessions.
   - Mimic the visual appearance of draggable cards/notes shown in the reference image.
 
@@ -23,77 +23,78 @@ goals:
 features:
   - id: F01
     name: Note Creation
-    description: User can create new, empty notes via a dedicated button or menu option. New notes appear at a default position.
+    description: User can create new, empty notes via a dedicated system tray or menu option. New notes appear below existing notes.
   - id: F02
     name: Note Editing
     description: User can click into a note's content area and type/edit text directly.
   - id: F03
     name: Note Movement (Dragging)
-    description: User can click and drag a note (likely by its body or a dedicated header area) to reposition it anywhere within the main container.
+    description: User can click and drag a note by its header area to reposition it anywhere on the screen.
   - id: F04
     name: Note Deletion
     description: Each note has a visible control (e.g., an 'X' button) to close/delete it permanently.
-    description: The content, position (and potentially size/color) of all active notes are saved when the application closes and restored when it reopens.
+  - id: F05
+    name: Note Persistence
+    description: The content, position, and size of all active notes are saved when the application closes and restored when it reopens.
 
 # 4. Technical Design
 # ----------------
 technical:
-  architecture: Single Page Application (Web) or Electron Wrapped Web App (Desktop)
+  architecture: Electron Desktop Application
   technologyStack:
     primary:
       language: JavaScript (ES6+)
       markup: HTML5
       styling: CSS3
-      framework: None (Vanilla JS) or Lightweight Frontend (e.g., Svelte, Vue - Optional)
-      persistence: Browser `localStorage` (for simple persistence)
-    desktopPackaging (Optional):
-      platform: Electron.js
-      persistenceAlternative: Node.js `fs` module for file-based saving.
+      framework: None (Vanilla JS)
+      desktopPlatform: Electron.js
+      persistence: Node.js fs module for file-based saving
   dataModel:
     notesCollection: Array of Note Objects
     noteObject:
-      id: String # Unique identifier (e.g., timestamp + random number, or UUID)
+      id: String # Unique identifier (timestamp)
       content: String # Text content of the note
       position:
-        x: Number # Pixels from left edge of container
-        y: Number # Pixels from top edge of container
-      # Optional future additions:
-      # size:
-      #   width: Number
-      #   height: Number
-      # color: String # Background color hex/name
+        x: Number # Pixels from left edge of screen
+        y: Number # Pixels from top edge of screen
+      size:
+        width: Number
+        height: Number
 
 # 5. UI/UX Design
 # ----------------
 ui_ux:
   layout:
-    container: A main window or div acting as the boundary for notes. Could be dark themed like the example.
     notes:
-      display: Individual rectangular cards/elements.
+      display: Individual transparent windows acting as sticky notes.
       positioning: Absolute positioning based on saved x/y coordinates.
-      stacking: Newly focused or moved notes could optionally come to the front (`z-index`).
+      stacking: System level window stacking.
   components:
     noteCard:
       elements:
-        - Header/Drag Area (Optional, might be the whole card)
+        - Header/Drag Area
         - Content Area (Editable text block)
-        - Close Button ('X' icon, typically top-right corner)
+        - Close Button ('X' icon in top-right corner)
     globalControls:
-      - Add Note Button (Clearly visible button or menu item)
+      - System Tray Icon with context menu
+      - Controls for adding, showing, and hiding notes
   styling:
     noteAppearance:
-      background: Light color (e.g., light yellow like the example)
-      border: Subtle border or shadow for definition.
-      padding: Internal padding around text content.
-    typography: Clear, readable sans-serif font.
+      background: Light yellow color
+      border: Frameless window with subtle shadow
+      padding: Internal padding around text content
+    typography: Clear, readable sans-serif font
   interactions:
-    drag: Standard click-hold-drag-release mechanism. Cursor changes to 'grab'/'grabbing'.
+    drag: Header click-hold-drag-release mechanism. Cursor changes to 'grab'/'grabbing'.
     edit: Click inside content area activates text editing mode.
-    close: Single click on 'X' button removes the note (potentially with confirmation).
+    close: Single click on 'X' button removes the note.
+    create: New notes are auto-aligned in a vertical stack.
 
-# 6. Future Enhancements (Optional)
+# 6. Future Enhancements
 # ----------------
 futureEnhancements:
-  - Sticker auto-resizing
+  - Sticker themes and colors
   - Sticker categorization: debug, new feature, meeting notes, etc.
   - Connect to discord channel. If debug, post to #dev-bugs. If new feature, post to #feature-requests on completion.
+  - Keyboard shortcuts for common actions
+  - Note grouping or folders
