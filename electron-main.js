@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, ipcMain, Tray, screen } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, Tray, screen, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -89,23 +89,9 @@ function createTray() {
         } 
       },
       { 
-        label: 'Show All Stickers', 
+        label: 'Toggle Visibility', 
         click: () => {
-          stickerWindows.forEach(win => {
-            if (win && !win.isDestroyed()) {
-              win.show();
-            }
-          });
-        } 
-      },
-      { 
-        label: 'Hide All Stickers', 
-        click: () => {
-          stickerWindows.forEach(win => {
-            if (win && !win.isDestroyed()) {
-              win.hide();
-            }
-          });
+          toggleStickersVisibility();
         } 
       },
       { type: 'separator' },
@@ -148,23 +134,9 @@ function createSimpleControlWindow() {
             } 
           },
           { 
-            label: 'Show All Stickers', 
+            label: 'Toggle Visibility', 
             click: () => {
-              stickerWindows.forEach(win => {
-                if (win && !win.isDestroyed()) {
-                  win.show();
-                }
-              });
-            } 
-          },
-          { 
-            label: 'Hide All Stickers', 
-            click: () => {
-              stickerWindows.forEach(win => {
-                if (win && !win.isDestroyed()) {
-                  win.hide();
-                }
-              });
+              toggleStickersVisibility();
             } 
           },
           { type: 'separator' },
@@ -311,6 +283,15 @@ app.whenReady().then(() => {
   // Load saved stickers from file
   loadSavedStickers();
 
+  // Register global shortcuts
+  globalShortcut.register('CommandOrControl+N', () => {
+    createStickerWindow();
+  });
+
+  globalShortcut.register('CommandOrControl+M', () => {
+    toggleStickersVisibility();
+  });
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -333,9 +314,33 @@ async function loadSavedStickers() {
   }
 }
 
+// Toggle visibility of all stickers
+function toggleStickersVisibility() {
+  // Check if any stickers are visible
+  let anyVisible = false;
+  stickerWindows.forEach(win => {
+    if (win && !win.isDestroyed() && win.isVisible()) {
+      anyVisible = true;
+    }
+  });
+
+  // If any are visible, hide all; otherwise, show all
+  stickerWindows.forEach(win => {
+    if (win && !win.isDestroyed()) {
+      if (anyVisible) {
+        win.hide();
+      } else {
+        win.show();
+      }
+    }
+  });
+}
+
 // Make sure we properly clean up before quitting
 app.on('before-quit', () => {
   app.isQuitting = true;
+  // Unregister all shortcuts
+  globalShortcut.unregisterAll();
 });
 
 // Quit when all windows are closed, except on macOS
@@ -426,7 +431,13 @@ ipcMain.handle('remove-sticker', async (event, stickerId) => {
   }
 });
 
-// IPC for showing all stickers
+// IPC for toggling stickers visibility
+ipcMain.handle('toggle-stickers-visibility', () => {
+  toggleStickersVisibility();
+  return { success: true };
+});
+
+// IPC for showing all stickers (keeping this for compatibility)
 ipcMain.handle('show-all-stickers', () => {
   stickerWindows.forEach(win => {
     if (win && !win.isDestroyed()) {
@@ -436,7 +447,7 @@ ipcMain.handle('show-all-stickers', () => {
   return { success: true };
 });
 
-// IPC for hiding all stickers
+// IPC for hiding all stickers (keeping this for compatibility)
 ipcMain.handle('hide-all-stickers', () => {
   stickerWindows.forEach(win => {
     if (win && !win.isDestroyed()) {

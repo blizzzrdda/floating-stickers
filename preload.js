@@ -18,6 +18,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return ipcRenderer.invoke('create-sticker', stickerData);
   },
   
+  // Function to toggle stickers visibility
+  toggleStickersVisibility: () => {
+    return ipcRenderer.invoke('toggle-stickers-visibility');
+  },
+  
   // Function to show all stickers
   showAllStickers: () => {
     return ipcRenderer.invoke('show-all-stickers');
