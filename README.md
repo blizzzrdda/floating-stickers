@@ -1,5 +1,9 @@
 # Floating Stickers
 
+<p align="center">
+  <img src="icon.png" alt="Floating Stickers Logo" width="128">
+</p>
+
 A frameless desktop application that allows you to create and manage floating stickers on your screen.
 
 ## Features
@@ -21,7 +25,12 @@ A frameless desktop application that allows you to create and manage floating st
 
 ### Installation
 
+#### From Source
 1. Clone this repository
+   ```
+   git clone https://github.com/yourusername/floating-stickers.git
+   cd floating-stickers
+   ```
 2. Install dependencies:
    ```
    npm install
@@ -30,6 +39,11 @@ A frameless desktop application that allows you to create and manage floating st
    ```
    npm start
    ```
+
+#### From Release
+1. Download the latest release from the [Releases](https://github.com/yourusername/floating-stickers/releases) page
+2. For Windows, download the FloatingStickers.exe portable executable
+3. Run the application
 
 ### Building the Application
 
@@ -43,6 +57,12 @@ To create a Windows package:
 
 ```
 npm run package
+```
+
+To create a portable Windows executable:
+
+```
+npm run package-portable
 ```
 
 ## Usage
@@ -75,6 +95,16 @@ Before building the application, replace the `icon.txt` file with a proper `icon
 - Note grouping or folders
 - Connection to Discord channels for sharing stickers
 
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
 ## License
 
-This project is open source and available under the MIT License. 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 

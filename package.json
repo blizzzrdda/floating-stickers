@@ -10,7 +10,7 @@
     "package-portable": "electron-builder --win --x64 --config.win.target=portable"
   },
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "electron": "^28.2.0",
     "electron-builder": "^24.9.1"
