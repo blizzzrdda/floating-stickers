@@ -84,18 +84,21 @@ function createTray() {
     const contextMenu = Menu.buildFromTemplate([
       { 
         label: 'Add New Sticker', 
+        accelerator: 'CmdOrCtrl+N',
         click: () => {
           createStickerWindow();
         } 
       },
       { 
         label: 'Toggle Visibility', 
+        accelerator: 'CmdOrCtrl+M',
         click: () => {
           toggleStickersVisibility();
         } 
       },
       { 
         label: 'Re-align Stickers', 
+        accelerator: 'CmdOrCtrl+,',
         click: () => {
           realignStickers();
         } 
@@ -135,18 +138,21 @@ function createSimpleControlWindow() {
         submenu: [
           { 
             label: 'Add New Sticker', 
+            accelerator: 'CmdOrCtrl+N',
             click: () => {
               createStickerWindow();
             } 
           },
           { 
             label: 'Toggle Visibility', 
+            accelerator: 'CmdOrCtrl+M',
             click: () => {
               toggleStickersVisibility();
             } 
           },
           { 
             label: 'Re-align Stickers', 
+            accelerator: 'CmdOrCtrl+,',
             click: () => {
               realignStickers();
             } 
