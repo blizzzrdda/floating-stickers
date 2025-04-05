@@ -132,6 +132,25 @@
         document.body.style.width = `${stickerData.size.width}px`;
         document.body.style.height = `${stickerData.size.height}px`;
         
+        // Auto-focus on content area when page loads for new stickers
+        window.addEventListener('DOMContentLoaded', () => {
+            // Focus the content area
+            content.focus();
+            
+            // Place cursor at the end of any existing content
+            if (content.innerHTML) {
+                // Create a range at the end of the content
+                const range = document.createRange();
+                range.selectNodeContents(content);
+                range.collapse(false); // collapse to end
+                
+                // Apply the range selection
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+        });
+        
         // Receive sticker data from main process
         window.stickerAPI.onStickerData(data => {
             stickerData = data;
@@ -142,6 +161,11 @@
                 document.body.style.width = `${data.size.width}px`;
                 document.body.style.height = `${data.size.height}px`;
                 adjustHeight(); // Still adjust height for content if needed
+            }
+            
+            // If this is a new sticker (no content), focus the editor
+            if (!data.content) {
+                content.focus();
             }
             
             // Ensure close button is visible after loading data
