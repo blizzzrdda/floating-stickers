@@ -219,6 +219,7 @@ function createStickerWindow(stickerData = null) {
     
     // Filter stickers that are on the target display
     const stickersOnTargetDisplay = existingStickers.filter(sticker => {
+      if (!sticker.position) return false;
       const stickerX = sticker.position.x;
       const stickerY = sticker.position.y;
       return stickerX >= workArea.x && stickerX < workArea.x + workArea.width &&
@@ -226,14 +227,16 @@ function createStickerWindow(stickerData = null) {
     });
     
     // Also check current active sticker windows to ensure proper stacking
-    let lowestY = 0;
+    let lowestY = workArea.y + GRID_SIZE;
     
     // First check existing stickers from file that are on this display
     if (stickersOnTargetDisplay.length > 0) {
       stickersOnTargetDisplay.forEach(sticker => {
-        const bottom = sticker.position.y + (sticker.size?.height || stickerHeight);
-        if (bottom > lowestY) {
-          lowestY = bottom;
+        if (sticker.position && (sticker.size || stickerHeight)) {
+          const bottom = sticker.position.y + (sticker.size?.height || stickerHeight);
+          if (bottom > lowestY) {
+            lowestY = bottom;
+          }
         }
       });
     }
@@ -258,7 +261,7 @@ function createStickerWindow(stickerData = null) {
       });
     }
     
-    if (lowestY === 0) {
+    if (lowestY === workArea.y + GRID_SIZE && stickersOnTargetDisplay.length === 0 && stickerWindows.size === 0) {
       // First sticker on this display - position at top-left with padding
       x = workArea.x + GRID_SIZE;
       y = workArea.y + GRID_SIZE;
