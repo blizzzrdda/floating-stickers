@@ -6,7 +6,8 @@
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
-    "package": "electron-builder --win --x64"
+    "package": "electron-builder --win --x64",
+    "package-portable": "electron-builder --win --x64 --config.win.target=portable"
   },
   "author": "",
   "license": "ISC",
@@ -22,13 +23,12 @@
     },
     "win": {
       "target": [
-        "nsis"
+        "portable"
       ],
       "icon": "icon.png"
     },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+    "portable": {
+      "artifactName": "FloatingStickers.exe"
     }
   }
 } 

@@ -53,11 +53,12 @@
         <div>
             <button id="add-sticker-btn">Add New Sticker</button>
             <button id="toggle-visibility-btn">Toggle Visibility</button>
+            <button id="align-stickers-btn">Re-align Stickers</button>
         </div>
         <p class="note">
             Note: This control panel is shown because the system tray icon could not be created.<br>
             You can close this window and use the application menu instead.<br>
-            Keyboard shortcuts: Ctrl+N to create a new sticker, Ctrl+M to toggle visibility.
+            Keyboard shortcuts: Ctrl+N to create a new sticker, Ctrl+M to toggle visibility, Ctrl+, to re-align stickers.
         </p>
     </div>
     
@@ -66,6 +67,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             const addStickerBtn = document.getElementById('add-sticker-btn');
             const toggleVisibilityBtn = document.getElementById('toggle-visibility-btn');
+            const alignStickersBtn = document.getElementById('align-stickers-btn');
             
             // Use electronAPI to communicate with main process
             if (addStickerBtn) {
@@ -89,6 +91,31 @@
                     }
                 });
             }
+            
+            if (alignStickersBtn) {
+                alignStickersBtn.addEventListener('click', async () => {
+                    try {
+                        await window.electronAPI.realignStickers();
+                        console.log('Re-aligned all stickers');
+                    } catch (error) {
+                        console.error('Failed to re-align stickers:', error);
+                    }
+                });
+            }
+            
+            // Add global keyboard shortcut for realigning stickers (Ctrl+,)
+            document.addEventListener('keydown', async (e) => {
+                // Check for Ctrl+, (Ctrl+188)
+                if (e.ctrlKey && e.keyCode === 188) {
+                    try {
+                        await window.electronAPI.realignStickers();
+                        console.log('Re-aligned all stickers via shortcut');
+                    } catch (error) {
+                        console.error('Failed to re-align stickers:', error);
+                    }
+                    e.preventDefault(); // Prevent default browser action
+                }
+            });
         });
     </script>
 </body>
