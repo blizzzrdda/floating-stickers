@@ -33,6 +33,8 @@
             display: flex;
             flex-direction: column;
             position: relative;
+            height: 100%;
+            width: 100%;
         }
         
         .sticker-header {
@@ -55,13 +57,14 @@
             cursor: pointer;
             font-size: 16px;
             color: #777;
-            display: flex;
+            display: flex !important; /* Force display */
             align-items: center;
             justify-content: center;
             width: 20px;
             height: 20px;
             border-radius: 50%;
             -webkit-app-region: no-drag; /* Make button clickable */
+            z-index: 10;
         }
         
         .sticker-close:hover {
@@ -74,8 +77,11 @@
             padding: 10px;
             outline: none;
             min-height: 20px;
-            overflow-y: auto;
-            max-height: calc(100vh - 40px); /* Allow scrolling for large content */
+            overflow: hidden; /* Hide scrollbars */
+            max-height: none; /* Remove max-height to allow auto-height */
+            white-space: pre-wrap; /* Preserve whitespace but wrap text */
+            word-wrap: break-word; /* Break words when needed */
+            word-break: break-word; /* Break words at appropriate points */
         }
         
         .sticker-content[contenteditable="true"] {
@@ -89,10 +95,11 @@
             right: 0;
             width: 16px;
             height: 16px;
-            cursor: nwse-resize;
+            cursor: ew-resize; /* Change cursor to indicate horizontal-only resize */
             background-color: rgba(0, 0, 0, 0.1);
             border-top-left-radius: 3px;
             -webkit-app-region: no-drag; /* Make resizable */
+            z-index: 10;
         }
         
         .sticker-content:empty::before {
@@ -119,12 +126,20 @@
         const content = document.querySelector('.sticker-content');
         const resizeHandle = document.querySelector('.sticker-resize');
         
+        // Ensure elements are visible immediately
+        if (closeBtn) {
+            closeBtn.style.display = 'flex';
+            closeBtn.style.visibility = 'visible';
+            closeBtn.style.opacity = '1';
+        }
+        if (resizeHandle) resizeHandle.style.display = 'block';
+        
         // Sticker data
         let stickerData = {
             id: Date.now().toString(),
             content: '',
             position: { x: 0, y: 0 },
-            size: { width: 250, height: 250 }
+            size: { width: 250, height: 80 }
         };
         
         // Receive sticker data from main process
@@ -132,12 +147,42 @@
             stickerData = data;
             content.innerHTML = data.content || '';
             
-            // Apply size if available
+            // Apply width, but height will be determined by content
             if (data.size) {
                 document.body.style.width = `${data.size.width}px`;
-                document.body.style.height = `${data.size.height}px`;
+                adjustHeight();
             }
+            
+            // Ensure close button and resize handle are visible after loading data
+            if (closeBtn) {
+                closeBtn.style.display = 'flex';
+                closeBtn.style.visibility = 'visible';
+                closeBtn.style.opacity = '1';
+            }
+            if (resizeHandle) resizeHandle.style.display = 'block';
+            
+            // Force a small delay to ensure UI is updated
+            setTimeout(() => {
+                if (closeBtn) {
+                    closeBtn.style.display = 'flex';
+                    closeBtn.style.visibility = 'visible';
+                }
+            }, 100);
         });
+        
+        // Function to adjust height based on content
+        function adjustHeight() {
+            const contentHeight = content.scrollHeight;
+            const headerHeight = 40; // Header height + padding
+            const padding = 20; // Extra padding
+            
+            // Set window height to fit content exactly
+            const newHeight = contentHeight + headerHeight + padding;
+            document.body.style.height = `${newHeight}px`;
+            
+            // Update size data
+            stickerData.size.height = newHeight;
+        }
         
         // Close button click
         closeBtn.addEventListener('click', () => {
@@ -152,11 +197,7 @@
         
         // Content change
         content.addEventListener('input', () => {
-            // Automatically grow height when content added
-            if (content.innerHTML && content.innerHTML.trim() !== '') {
-                const newHeight = Math.max(100, content.scrollHeight + 40); // 40px for header + padding
-                document.body.style.height = `${newHeight}px`;
-            }
+            adjustHeight();
         });
         
         content.addEventListener('blur', () => {
@@ -195,16 +236,14 @@
             resizeTimeout = setTimeout(handleWindowResize, 300);
         });
         
-        // Manual resize functionality
+        // Manual resize functionality - width only
         let isResizing = false;
-        let originalWidth, originalHeight, originalMouseX, originalMouseY;
+        let originalWidth, originalMouseX;
         
         resizeHandle.addEventListener('mousedown', (e) => {
             isResizing = true;
             originalWidth = window.innerWidth;
-            originalHeight = window.innerHeight;
             originalMouseX = e.pageX;
-            originalMouseY = e.pageY;
             e.preventDefault();
         });
         
@@ -212,10 +251,9 @@
             if (!isResizing) return;
             
             const width = originalWidth + (e.pageX - originalMouseX);
-            const height = originalHeight + (e.pageY - originalMouseY);
             
-            if (width > 150 && height > 150) {
-                window.resizeTo(width, height);
+            if (width > 150) {
+                window.resizeTo(width, window.innerHeight);
             }
         });
         
@@ -236,7 +274,7 @@
                 const pos = window.screenLeft !== undefined ? { x: window.screenLeft, y: window.screenTop } : { x: 0, y: 0 };
                 stickerData.position = pos;
                 saveSticker();
-            }, 300);
+            }, 100); // Reduced delay for more responsive position tracking
         });
     </script>
 </body>

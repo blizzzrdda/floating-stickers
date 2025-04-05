@@ -125,4 +125,16 @@ body {
 .sticker-content[contenteditable="true"] {
     outline: none;
     border: 1px dashed rgba(0, 0, 0, 0.2);
+}
+
+.sticker-resize {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-top-left-radius: 3px;
+    z-index: 10;
 } 

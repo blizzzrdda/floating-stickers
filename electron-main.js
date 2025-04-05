@@ -206,20 +206,39 @@ function createStickerWindow(stickerData = null) {
       }
     }
     
-    if (existingStickers.length === 0) {
-      // First sticker - center it horizontally
-      x = Math.round((width / 2 - stickerWidth / 2) / GRID_SIZE) * GRID_SIZE;
-      y = GRID_SIZE;
-    } else {
-      // Find the lowest sticker
-      let lowestY = 0;
+    // Also check current active sticker windows to ensure proper stacking
+    let lowestY = 0;
+    
+    // First check existing stickers from file
+    if (existingStickers.length > 0) {
       existingStickers.forEach(sticker => {
         const bottom = sticker.position.y + (sticker.size?.height || stickerHeight);
         if (bottom > lowestY) {
           lowestY = bottom;
         }
       });
-      
+    }
+    
+    // Now check active sticker windows (these may not be saved yet)
+    if (stickerWindows.size > 0) {
+      stickerWindows.forEach(win => {
+        if (win && !win.isDestroyed()) {
+          const [winX, winY] = win.getPosition();
+          const [winWidth, winHeight] = win.getSize();
+          const bottom = winY + winHeight;
+          
+          if (bottom > lowestY) {
+            lowestY = bottom;
+          }
+        }
+      });
+    }
+    
+    if (lowestY === 0) {
+      // First sticker - center it horizontally
+      x = Math.round((width / 2 - stickerWidth / 2) / GRID_SIZE) * GRID_SIZE;
+      y = GRID_SIZE;
+    } else {
       // Position the new sticker below the lowest one with padding
       x = Math.round((width / 2 - stickerWidth / 2) / GRID_SIZE) * GRID_SIZE;
       y = Math.round((lowestY + GRID_SIZE) / GRID_SIZE) * GRID_SIZE;
@@ -233,7 +252,7 @@ function createStickerWindow(stickerData = null) {
   // Set initial size based on whether this is a new or existing sticker
   const windowHeight = stickerData && stickerData.content ? 
                       (stickerData.size?.height || 250) : // Use existing size or default
-                      stickerHeight; // Small height for new stickers with header
+                      stickerHeight;
   
   // Create a frameless window for the sticker
   const stickerWindow = new BrowserWindow({
