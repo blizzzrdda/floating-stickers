@@ -1,10 +1,13 @@
 const { app, BrowserWindow, Menu, ipcMain, Tray, screen, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const StickerDataManager = require('./utils/stickerUtils');
 
-// Define the stickers data file path in the user's data directory
+// Define the user data path
 const userDataPath = app.getPath('userData');
-const stickersFilePath = path.join(userDataPath, 'stickers.json');
+
+// Initialize the sticker data manager
+const stickerManager = new StickerDataManager(userDataPath);
 
 let mainWindow;
 let tray = null;
@@ -250,8 +253,9 @@ function createStickerWindow(stickerData = null) {
           // Check if this sticker is on the target display
           if (winX >= workArea.x && winX < workArea.x + workArea.width &&
               winY >= workArea.y && winY < workArea.y + workArea.height) {
-            const [winWidth, winHeight] = win.getSize();
-            const bottom = winY + winHeight;
+            // Get the window's height (or use default)
+            const winHeight = win.getSize()[1] || stickerHeight;
+            const bottom = winY + winHeight + GRID_SIZE;
             
             if (bottom > lowestY) {
               lowestY = bottom;
@@ -261,82 +265,98 @@ function createStickerWindow(stickerData = null) {
       });
     }
     
-    if (lowestY === workArea.y + GRID_SIZE && stickersOnTargetDisplay.length === 0 && stickerWindows.size === 0) {
-      // First sticker on this display - position at top-left with padding
-      x = workArea.x + GRID_SIZE;
-      y = workArea.y + GRID_SIZE;
-    } else {
-      // Position the new sticker below the lowest one with padding
-      x = workArea.x + GRID_SIZE;
-      y = Math.round((lowestY + GRID_SIZE) / GRID_SIZE) * GRID_SIZE;
-    }
-    
-    // Ensure we're not placing stickers off-screen
-    x = Math.min(x, workArea.x + workArea.width - stickerWidth);
-    y = Math.min(y, workArea.y + workArea.height - stickerHeight);
+    // Set the position for the new sticker
+    x = workArea.x + GRID_SIZE;
+    y = lowestY + GRID_SIZE; // Stack new stickers below existing ones
   }
   
-  // Set initial size based on whether this is a new or existing sticker
-  const windowHeight = stickerData && stickerData.content ? 
-                      (stickerData.size?.height || 250) : // Use existing size or default
-                      stickerHeight;
+  // Create a unique ID for this sticker if it doesn't have one
+  const stickerId = stickerData?.id || Date.now().toString();
   
-  // Create a frameless window for the sticker
+  // Create the sticker window
   const stickerWindow = new BrowserWindow({
-    width: 250,
-    height: windowHeight,
+    width: stickerData?.size?.width || stickerWidth,
+    height: stickerData?.size?.height || stickerHeight,
     x: x,
     y: y,
-    frame: false, // No window frame
-    transparent: true, // Transparent background
+    frame: false,
+    transparent: true,
+    resizable: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload-sticker.js')
     },
-    skipTaskbar: true, // Don't show in taskbar
-    alwaysOnTop: true, // Stay on top
-    resizable: true,
+    alwaysOnTop: false,
+    skipTaskbar: true,
+    show: false, // Don't show until everything is ready
   });
   
-  // Generate a unique ID for the sticker window
-  const stickerId = stickerData?.id || Date.now().toString();
-  
-  // Load sticker HTML
-  stickerWindow.loadFile('sticker.html');
-  
-  // Store the sticker window reference
+  // Track this sticker window by its ID
   stickerWindows.set(stickerId, stickerWindow);
   
-  // When the sticker window is ready, send the sticker data
-  stickerWindow.webContents.on('did-finish-load', () => {
-    if (stickerData) {
-      stickerWindow.webContents.send('sticker-data', stickerData);
-    } else {
-      // Send initial position data for new stickers
-      stickerWindow.webContents.send('sticker-data', {
-        id: stickerId,
-        content: '',
-        position: { x, y },
-        size: { width: 250, height: windowHeight }
-      });
+  // Load the sticker HTML file
+  stickerWindow.loadFile('sticker.html');
+  
+  // Set a minimum size
+  stickerWindow.setMinimumSize(150, 80);
+  
+  // When the window is ready to show
+  stickerWindow.once('ready-to-show', () => {
+    // Prepare data to send to the sticker window
+    const dataToSend = {
+      id: stickerId,
+      content: stickerData?.content || '',
+      position: { x, y },
+      size: {
+        width: stickerData?.size?.width || stickerWidth,
+        height: stickerData?.size?.height || stickerHeight
+      }
+    };
+    
+    // Send the data to the sticker window
+    stickerWindow.webContents.send('sticker-data', dataToSend);
+    
+    // Show the window
+    stickerWindow.show();
+    
+    // Auto-align stickers if this is a new sticker (not being restored from saved data)
+    if (!stickerData || !stickerData.id) {
+      // Small delay to ensure the window is fully rendered before alignment
+      setTimeout(() => realignStickers(), 100);
     }
   });
   
-  // Handle sticker window close
+  // When the sticker is closed
   stickerWindow.on('closed', () => {
+    // Remove from our tracking Map
     stickerWindows.delete(stickerId);
   });
   
+  // When the sticker is moved
+  stickerWindow.on('moved', () => {
+    if (stickerWindow.isDestroyed()) return;
+    
+    // Get the new position
+    const [newX, newY] = stickerWindow.getPosition();
+    
+    // Update our position tracking
+    const updatedPosition = { x: newX, y: newY };
+    
+    // We'll let the renderer process update this in the file
+    stickerWindow.webContents.send('position-updated', updatedPosition);
+  });
+  
+  // Return the ID we assigned to this sticker
   return stickerId;
 }
 
 // When Electron has finished initialization
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   createWindow();
   
   // Load saved stickers from file
-  loadSavedStickers();
+  await loadSavedStickers();
 
   // Register global shortcuts
   globalShortcut.register('CommandOrControl+N', () => {
@@ -359,26 +379,16 @@ app.whenReady().then(() => {
 // Load stickers from file and create sticker windows
 async function loadSavedStickers() {
   try {
-    if (fs.existsSync(stickersFilePath)) {
-      const data = await fs.promises.readFile(stickersFilePath, 'utf8');
-      let stickers = JSON.parse(data);
-      
-      // Sanitize sticker content to ensure only plain text
-      stickers = stickers.map(sticker => {
-        if (sticker.content && typeof sticker.content === 'string') {
-          // Strip HTML tags to get plain text
-          sticker.content = stripHtml(sticker.content);
-        }
-        return sticker;
-      });
-      
-      // Save the sanitized stickers back to file
-      await fs.promises.writeFile(stickersFilePath, JSON.stringify(stickers));
-      
-      // Create a window for each saved sticker
-      stickers.forEach(sticker => {
-        createStickerWindow(sticker);
-      });
+    // First, migrate from old format if needed
+    await stickerManager.migrateFromLegacyFormat();
+    
+    // Load the merged sticker data
+    const stickers = await stickerManager.loadStickerData();
+    
+    // Create windows for each sticker
+    for (const sticker of stickers) {
+      // Create the sticker window
+      createStickerWindow(sticker);
     }
   } catch (error) {
     console.error('Error loading stickers:', error);
@@ -387,11 +397,7 @@ async function loadSavedStickers() {
 
 // Function to strip HTML tags from content
 function stripHtml(html) {
-  if (!html) return '';
-  // Create a temporary DOM element
-  const tempElement = new (require('jsdom').JSDOM)('').window.document.createElement('div');
-  tempElement.innerHTML = html;
-  return tempElement.textContent || tempElement.innerText || '';
+  return stickerManager.stripHtml(html);
 }
 
 // Toggle visibility of all stickers
@@ -434,8 +440,37 @@ app.on('window-all-closed', function () {
 // IPC for saving stickers data to file system
 ipcMain.handle('save-stickers', async (event, stickersData) => {
   try {
-    await fs.promises.writeFile(stickersFilePath, JSON.stringify(stickersData));
-    return { success: true };
+    if (!Array.isArray(stickersData)) {
+      return { success: false, error: 'Invalid data format' };
+    }
+    
+    // Split into layout and content
+    const layoutData = stickersData.map(sticker => ({
+      id: String(sticker.id || Date.now()),
+      position: {
+        x: Number(sticker.position?.x || 0),
+        y: Number(sticker.position?.y || 0)
+      },
+      size: {
+        width: Number(sticker.size?.width || 250),
+        height: Number(sticker.size?.height || 80)
+      }
+    }));
+    
+    const contentData = stickersData.map(sticker => ({
+      id: String(sticker.id || Date.now()),
+      content: String(sticker.content || '')
+    }));
+    
+    // Save both files
+    const layoutSaved = await stickerManager.saveLayoutData(layoutData);
+    const contentSaved = await stickerManager.saveContentData(contentData);
+    
+    return { 
+      success: layoutSaved && contentSaved,
+      layoutSaved,
+      contentSaved
+    };
   } catch (error) {
     console.error('Error saving stickers:', error);
     return { success: false, error: error.message };
@@ -445,11 +480,9 @@ ipcMain.handle('save-stickers', async (event, stickersData) => {
 // IPC for loading stickers data from file system
 ipcMain.handle('load-stickers', async () => {
   try {
-    if (fs.existsSync(stickersFilePath)) {
-      const data = await fs.promises.readFile(stickersFilePath, 'utf8');
-      return { success: true, data: JSON.parse(data) };
-    }
-    return { success: true, data: [] };
+    // Load the merged sticker data
+    const mergedData = await stickerManager.loadStickerData();
+    return { success: true, data: mergedData };
   } catch (error) {
     console.error('Error loading stickers:', error);
     return { success: false, error: error.message, data: [] };
@@ -465,24 +498,9 @@ ipcMain.handle('create-sticker', async (event, stickerData) => {
 // IPC for updating sticker position
 ipcMain.handle('update-sticker', async (event, stickerData) => {
   try {
-    // Get all stickers data
-    let stickers = [];
-    if (fs.existsSync(stickersFilePath)) {
-      const data = await fs.promises.readFile(stickersFilePath, 'utf8');
-      stickers = JSON.parse(data);
-    }
-    
-    // Find and update the sticker
-    const stickerIndex = stickers.findIndex(s => s.id === stickerData.id);
-    if (stickerIndex !== -1) {
-      stickers[stickerIndex] = stickerData;
-    } else {
-      stickers.push(stickerData);
-    }
-    
-    // Save updated stickers
-    await fs.promises.writeFile(stickersFilePath, JSON.stringify(stickers));
-    return { success: true };
+    // Use the sticker manager to update the sticker
+    const result = await stickerManager.updateSticker(stickerData);
+    return result;
   } catch (error) {
     console.error('Error updating sticker:', error);
     return { success: false, error: error.message };
@@ -492,19 +510,9 @@ ipcMain.handle('update-sticker', async (event, stickerData) => {
 // IPC for removing a sticker
 ipcMain.handle('remove-sticker', async (event, stickerId) => {
   try {
-    // Get all stickers data
-    let stickers = [];
-    if (fs.existsSync(stickersFilePath)) {
-      const data = await fs.promises.readFile(stickersFilePath, 'utf8');
-      stickers = JSON.parse(data);
-    }
-    
-    // Remove the sticker
-    const filteredStickers = stickers.filter(s => s.id !== stickerId);
-    
-    // Save updated stickers
-    await fs.promises.writeFile(stickersFilePath, JSON.stringify(filteredStickers));
-    return { success: true };
+    // Use the sticker manager to remove the sticker
+    const result = await stickerManager.removeSticker(stickerId);
+    return result;
   } catch (error) {
     console.error('Error removing sticker:', error);
     return { success: false, error: error.message };
@@ -546,34 +554,40 @@ ipcMain.handle('realign-stickers', () => {
 // Function to realign stickers in a vertical-first layout with multi-screen support
 function realignStickers() {
   const GRID_SIZE = 20;
+  const BOTTOM_MARGIN = 200; // Space to leave at the bottom of the screen
   
   // Get all available displays
   const displays = screen.getAllDisplays();
   
-  // Get all sticker windows
-  const validStickers = [];
-  stickerWindows.forEach(win => {
-    if (win && !win.isDestroyed()) {
-      validStickers.push(win);
-    }
-  });
+  // Collect valid sticker windows
+  const validStickers = Array.from(stickerWindows.values()).filter(win => 
+    win && !win.isDestroyed()
+  );
+  
+  if (validStickers.length === 0) return; // No stickers to align
   
   // Group stickers by the display they're currently on
+  const stickersByDisplay = groupStickersByDisplay(validStickers, displays);
+  
+  // Process and align stickers on each display
+  displays.forEach(display => {
+    alignStickersOnDisplay(display, stickersByDisplay[display.id] || [], GRID_SIZE, BOTTOM_MARGIN);
+  });
+}
+
+// Helper: Group stickers by the display they're on
+function groupStickersByDisplay(stickers, displays) {
   const stickersByDisplay = {};
   
-  validStickers.forEach(win => {
+  stickers.forEach(win => {
     const [winX, winY] = win.getPosition();
     
-    // Determine which display this sticker is on
-    let targetDisplay = null;
-    for (const display of displays) {
+    // Find which display contains this sticker
+    let targetDisplay = displays.find(display => {
       const bounds = display.bounds;
-      if (winX >= bounds.x && winX < bounds.x + bounds.width &&
-          winY >= bounds.y && winY < bounds.y + bounds.height) {
-        targetDisplay = display;
-        break;
-      }
-    }
+      return winX >= bounds.x && winX < bounds.x + bounds.width &&
+             winY >= bounds.y && winY < bounds.y + bounds.height;
+    });
     
     // If sticker isn't on any display, assign it to the default display (second if available)
     if (!targetDisplay) {
@@ -588,53 +602,47 @@ function realignStickers() {
     stickersByDisplay[displayId].push(win);
   });
   
-  // Process each display separately
-  displays.forEach(display => {
-    const displayId = display.id;
-    const stickersOnDisplay = stickersByDisplay[displayId] || [];
+  return stickersByDisplay;
+}
+
+// Helper: Align stickers on a specific display
+function alignStickersOnDisplay(display, stickers, gridSize, bottomMargin) {
+  if (stickers.length === 0) return;
+  
+  // Get display work area (accounts for taskbar, etc.)
+  const workArea = screen.getDisplayMatching(display.bounds).workArea;
+  const maxHeight = workArea.height - bottomMargin;
+  
+  // Sort stickers by their vertical position (top to bottom)
+  stickers.sort((a, b) => {
+    const [, aY] = a.getPosition();
+    const [, bY] = b.getPosition();
+    return aY - bY;
+  });
+  
+  // Use the horizontal position of the first sticker as the alignment point
+  const [firstStickerX] = stickers[0].getPosition();
+  
+  let baseX = firstStickerX;
+  let currentY = workArea.y + gridSize;
+  let maxWidthInColumn = 0;
+  
+  // Position each sticker
+  stickers.forEach((win, index) => {
+    const [winWidth, winHeight] = win.getSize();
     
-    if (stickersOnDisplay.length === 0) return;
+    // Start a new column if this sticker would exceed screen height
+    if (currentY + winHeight > workArea.y + maxHeight && index > 0) {
+      baseX += maxWidthInColumn + gridSize;
+      currentY = workArea.y + gridSize;
+      maxWidthInColumn = 0;
+    }
     
-    // Get display work area (accounts for taskbar, etc.)
-    const workArea = screen.getDisplayMatching(display.bounds).workArea;
-    const maxHeight = workArea.height - 100; // Leave some space at the bottom
+    // Position the sticker
+    win.setPosition(baseX, currentY);
     
-    // Sort stickers on this display by their vertical position (top to bottom)
-    stickersOnDisplay.sort((a, b) => {
-      const [aX, aY] = a.getPosition();
-      const [bX, bY] = b.getPosition();
-      return aY - bY;
-    });
-    
-    // Get the horizontal position of the first (topmost) sticker
-    const [firstStickerX, firstStickerY] = stickersOnDisplay[0].getPosition();
-    
-    // Use the horizontal position of the first sticker as the alignment point
-    let baseX = firstStickerX;
-    let currentY = workArea.y + GRID_SIZE;
-    let maxWidthInColumn = 0;
-    
-    // Position each sticker on this display
-    stickersOnDisplay.forEach((win, index) => {
-      // Get the size of the current sticker
-      const [winWidth, winHeight] = win.getSize();
-      
-      // If adding this sticker would exceed the screen height, move to the next column
-      if (currentY + winHeight > workArea.y + maxHeight && index > 0) {
-        // Move to the next column, but maintain the same horizontal alignment as the first sticker
-        baseX += maxWidthInColumn + GRID_SIZE;
-        currentY = workArea.y + GRID_SIZE;
-        maxWidthInColumn = 0;
-      }
-      
-      // Set position - use the same x-coordinate as the first sticker (or offset for additional columns)
-      win.setPosition(baseX, currentY);
-      
-      // Update the maximum width in the current column
-      maxWidthInColumn = Math.max(maxWidthInColumn, winWidth);
-      
-      // Move down for the next sticker
-      currentY += winHeight + GRID_SIZE;
-    });
+    // Update tracking variables
+    maxWidthInColumn = Math.max(maxWidthInColumn, winWidth);
+    currentY += winHeight + gridSize;
   });
 } 

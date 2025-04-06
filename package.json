@@ -7,13 +7,15 @@
     "start": "electron .",
     "build": "electron-builder",
     "package": "electron-builder --win --x64",
-    "package-portable": "electron-builder --win --x64 --config.win.target=portable"
+    "package-portable": "electron-builder --win --x64 --config.win.target=portable",
+    "prepare": "husky"
   },
   "author": "",
   "license": "MIT",
   "devDependencies": {
     "electron": "^28.2.0",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "husky": "^9.1.7"
   },
   "build": {
     "appId": "com.floating-stickers.app",

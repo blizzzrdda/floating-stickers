@@ -187,6 +187,14 @@
             }, 100);
         });
         
+        // Listen for position updates from the main process
+        window.stickerAPI.onPositionUpdated(position => {
+            if (position && position.x !== undefined && position.y !== undefined) {
+                stickerData.position = position;
+                saveSticker(); // Save the updated position
+            }
+        });
+        
         // Function to adjust height based on content
         function adjustHeight() {
             // If no content, use minimum height

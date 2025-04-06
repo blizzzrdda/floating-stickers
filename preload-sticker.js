@@ -16,5 +16,10 @@ contextBridge.exposeInMainWorld('stickerAPI', {
   // Receive sticker data from main process
   onStickerData: (callback) => {
     ipcRenderer.on('sticker-data', (_, data) => callback(data));
+  },
+  
+  // Receive position updates from main process (when window is moved)
+  onPositionUpdated: (callback) => {
+    ipcRenderer.on('position-updated', (_, position) => callback(position));
   }
 }); 
