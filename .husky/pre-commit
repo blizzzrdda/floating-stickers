@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-# Run the build
-npm run build
+# Auto-increment version and run the build
+npm run build:auto

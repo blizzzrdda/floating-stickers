@@ -1,6 +1,6 @@
 {
   "name": "floating-stickers",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Floating stickers app that works independently on screen",
   "main": "electron-main.js",
   "scripts": {
@@ -8,7 +8,16 @@
     "build": "electron-builder",
     "package": "electron-builder --win --x64",
     "package-portable": "electron-builder --win --x64 --config.win.target=portable",
-    "prepare": "husky"
+    "prepare": "husky",
+    "version:patch": "npm version patch",
+    "version:minor": "npm version minor",
+    "version:major": "npm version major",
+    "build:patch": "npm version patch && npm run build",
+    "build:minor": "npm version minor && npm run build",
+    "build:major": "npm version major && npm run build",
+    "auto-version": "node utils/versionUtils.js",
+    "build:auto": "node utils/versionUtils.js && npm run build",
+    "increment": "node utils/increment-version.js"
   },
   "author": "",
   "license": "MIT",
