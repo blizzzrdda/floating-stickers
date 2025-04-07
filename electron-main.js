@@ -6,6 +6,9 @@ const StickerDataManager = require('./utils/stickerUtils');
 // Define the user data path
 const userDataPath = app.getPath('userData');
 
+// Define the stickers file path
+const stickersFilePath = path.join(userDataPath, 'stickers.json');
+
 // Initialize the sticker data manager
 const stickerManager = new StickerDataManager(userDataPath);
 
