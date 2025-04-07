@@ -6,9 +6,6 @@ const StickerDataManager = require('./utils/stickerUtils');
 // Define the user data path
 const userDataPath = app.getPath('userData');
 
-// Define the stickers file path
-const stickersFilePath = path.join(userDataPath, 'stickers.json');
-
 // Initialize the sticker data manager
 const stickerManager = new StickerDataManager(userDataPath);
 
@@ -212,42 +209,10 @@ function createStickerWindow(stickerData = null) {
       y = workArea.y + GRID_SIZE;
     }
   } else {
-    // Get current stickers count for position calculation
-    let existingStickers = [];
-    if (fs.existsSync(stickersFilePath)) {
-      try {
-        const data = fs.readFileSync(stickersFilePath, 'utf8');
-        existingStickers = JSON.parse(data);
-      } catch (error) {
-        console.error('Error reading stickers for positioning:', error);
-      }
-    }
-    
-    // Filter stickers that are on the target display
-    const stickersOnTargetDisplay = existingStickers.filter(sticker => {
-      if (!sticker.position) return false;
-      const stickerX = sticker.position.x;
-      const stickerY = sticker.position.y;
-      return stickerX >= workArea.x && stickerX < workArea.x + workArea.width &&
-             stickerY >= workArea.y && stickerY < workArea.y + workArea.height;
-    });
-    
-    // Also check current active sticker windows to ensure proper stacking
+    // Calculate initial position based on existing stickers
     let lowestY = workArea.y + GRID_SIZE;
     
-    // First check existing stickers from file that are on this display
-    if (stickersOnTargetDisplay.length > 0) {
-      stickersOnTargetDisplay.forEach(sticker => {
-        if (sticker.position && (sticker.size || stickerHeight)) {
-          const bottom = sticker.position.y + (sticker.size?.height || stickerHeight);
-          if (bottom > lowestY) {
-            lowestY = bottom;
-          }
-        }
-      });
-    }
-    
-    // Now check active sticker windows that are on this display
+    // Check current active sticker windows to ensure proper stacking
     if (stickerWindows.size > 0) {
       stickerWindows.forEach(win => {
         if (win && !win.isDestroyed()) {
@@ -382,19 +347,36 @@ app.whenReady().then(async () => {
 // Load stickers from file and create sticker windows
 async function loadSavedStickers() {
   try {
-    // First, migrate from old format if needed
-    await stickerManager.migrateFromLegacyFormat();
+    console.log('Loading stickers data...');
     
     // Load the merged sticker data
     const stickers = await stickerManager.loadStickerData();
     
+    if (!Array.isArray(stickers)) {
+      console.error('Loaded sticker data is not an array, skipping window creation');
+      return;
+    }
+    
+    console.log(`Loading ${stickers.length} stickers`);
+    
     // Create windows for each sticker
     for (const sticker of stickers) {
-      // Create the sticker window
-      createStickerWindow(sticker);
+      if (!sticker || !sticker.id) {
+        console.warn('Skipping invalid sticker data:', sticker);
+        continue;
+      }
+      
+      try {
+        // Create the sticker window
+        createStickerWindow(sticker);
+      } catch (stickerError) {
+        console.error(`Error creating sticker window for sticker ${sticker.id}:`, stickerError);
+        // Continue with next sticker
+      }
     }
   } catch (error) {
     console.error('Error loading stickers:', error);
+    // Don't crash the app, just show an empty state
   }
 }
 

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { safeReadJSON, safeWriteJSON, backupJSONFile } = require('./jsonUtils');
+const { safeReadJSON, safeWriteJSON, backupJSONFile, validateJSONData, validateArrayData } = require('./jsonUtils');
 
 /**
  * Handles loading sticker layout and content data
@@ -12,70 +12,25 @@ class StickerDataManager {
    */
   constructor(userDataPath) {
     this.userDataPath = userDataPath;
-    this.legacyFilePath = path.join(userDataPath, 'stickers.json');
     this.layoutFilePath = path.join(userDataPath, 'stickers-layout.json');
     this.contentFilePath = path.join(userDataPath, 'stickers-content.json');
+    
+    // Ensure the user data directory exists
+    this.ensureDirectoryExists();
   }
-
+  
   /**
-   * Migrate from legacy format to the new split format
-   * @returns {Promise<boolean>} Success status
+   * Ensure the user data directory exists
+   * @private
    */
-  async migrateFromLegacyFormat() {
+  async ensureDirectoryExists() {
     try {
-      // Check if old file exists but new files don't
-      const oldExists = fs.existsSync(this.legacyFilePath);
-      const layoutExists = fs.existsSync(this.layoutFilePath);
-      const contentExists = fs.existsSync(this.contentFilePath);
-      
-      if (oldExists && (!layoutExists || !contentExists)) {
-        console.log('Migrating stickers data to new format...');
-        
-        // Read the old file
-        const oldData = await safeReadJSON(this.legacyFilePath, []);
-        
-        if (oldData.length === 0) {
-          // Nothing to migrate
-          await safeWriteJSON(this.layoutFilePath, []);
-          await safeWriteJSON(this.contentFilePath, []);
-          return true;
-        }
-        
-        // Create the new format data
-        const layoutData = oldData.map(sticker => ({
-          id: String(sticker.id || Date.now()),
-          position: {
-            x: Number(sticker.position?.x || 0),
-            y: Number(sticker.position?.y || 0)
-          },
-          size: {
-            width: Number(sticker.size?.width || 250),
-            height: Number(sticker.size?.height || 80)
-          }
-        }));
-        
-        const contentData = oldData.map(sticker => ({
-          id: String(sticker.id || Date.now()),
-          content: String(sticker.content || '')
-        }));
-        
-        // Write the new files
-        await safeWriteJSON(this.layoutFilePath, layoutData);
-        await safeWriteJSON(this.contentFilePath, contentData);
-        
-        // Backup and rename the old file
-        const backupPath = `${this.legacyFilePath}.migrated-${Date.now()}`;
-        await fs.promises.rename(this.legacyFilePath, backupPath);
-        console.log(`Migration complete. Old data backed up to ${backupPath}`);
-        
-        return true;
+      if (!fs.existsSync(this.userDataPath)) {
+        await fs.promises.mkdir(this.userDataPath, { recursive: true });
+        console.log(`Created user data directory: ${this.userDataPath}`);
       }
-      
-      // No migration needed
-      return true;
     } catch (error) {
-      console.error('Error during migration:', error);
-      return false;
+      console.error(`Failed to create user data directory: ${this.userDataPath}`, error);
     }
   }
 
@@ -84,7 +39,18 @@ class StickerDataManager {
    * @returns {Promise<Array>} Layout data array
    */
   async loadLayoutData() {
-    return await safeReadJSON(this.layoutFilePath, []);
+    try {
+      const data = await safeReadJSON(this.layoutFilePath, []);
+      if (!validateArrayData(data)) {
+        console.error('Layout data is not an array, resetting to default');
+        await safeWriteJSON(this.layoutFilePath, []);
+        return [];
+      }
+      return data;
+    } catch (error) {
+      console.error('Failed to load layout data:', error);
+      return [];
+    }
   }
 
   /**
@@ -92,7 +58,18 @@ class StickerDataManager {
    * @returns {Promise<Array>} Content data array
    */
   async loadContentData() {
-    return await safeReadJSON(this.contentFilePath, []);
+    try {
+      const data = await safeReadJSON(this.contentFilePath, []);
+      if (!validateArrayData(data)) {
+        console.error('Content data is not an array, resetting to default');
+        await safeWriteJSON(this.contentFilePath, []);
+        return [];
+      }
+      return data;
+    } catch (error) {
+      console.error('Failed to load content data:', error);
+      return [];
+    }
   }
 
   /**
@@ -101,7 +78,24 @@ class StickerDataManager {
    * @returns {Promise<boolean>} Success status
    */
   async saveLayoutData(layoutData) {
-    return await safeWriteJSON(this.layoutFilePath, layoutData);
+    try {
+      if (!validateArrayData(layoutData)) {
+        console.error('Attempted to save invalid layout data');
+        return false;
+      }
+      
+      // Filter out any invalid items
+      const validLayoutData = layoutData.filter(item => 
+        item && item.id && 
+        item.position && typeof item.position.x === 'number' && typeof item.position.y === 'number' &&
+        item.size && typeof item.size.width === 'number' && typeof item.size.height === 'number'
+      );
+      
+      return await safeWriteJSON(this.layoutFilePath, validLayoutData);
+    } catch (error) {
+      console.error('Failed to save layout data:', error);
+      return false;
+    }
   }
 
   /**
@@ -110,7 +104,22 @@ class StickerDataManager {
    * @returns {Promise<boolean>} Success status
    */
   async saveContentData(contentData) {
-    return await safeWriteJSON(this.contentFilePath, contentData);
+    try {
+      if (!validateArrayData(contentData)) {
+        console.error('Attempted to save invalid content data');
+        return false;
+      }
+      
+      // Filter out any invalid items
+      const validContentData = contentData.filter(item => 
+        item && item.id && typeof item.content === 'string'
+      );
+      
+      return await safeWriteJSON(this.contentFilePath, validContentData);
+    } catch (error) {
+      console.error('Failed to save content data:', error);
+      return false;
+    }
   }
 
   /**
@@ -118,27 +127,36 @@ class StickerDataManager {
    * @returns {Promise<Array>} Combined sticker data array
    */
   async loadStickerData() {
-    // Load layout and content data
-    const layoutData = await this.loadLayoutData();
-    const contentData = await this.loadContentData();
-    
-    // Create a map of content by ID for easy lookup
-    const contentMap = new Map();
-    contentData.forEach(item => {
-      contentMap.set(item.id, item.content);
-    });
-    
-    // Merge the data
-    const mergedData = layoutData.map(layout => {
-      return {
-        id: layout.id,
-        content: contentMap.get(layout.id) || '',
-        position: layout.position,
-        size: layout.size
-      };
-    });
-    
-    return mergedData;
+    try {
+      // Load layout and content data
+      const layoutData = await this.loadLayoutData();
+      const contentData = await this.loadContentData();
+      
+      // Create a map of content by ID for easy lookup
+      const contentMap = new Map();
+      contentData.forEach(item => {
+        if (item && item.id) {
+          contentMap.set(item.id, item.content);
+        }
+      });
+      
+      // Merge the data
+      const mergedData = layoutData.map(layout => {
+        if (!layout || !layout.id) return null;
+        
+        return {
+          id: layout.id,
+          content: contentMap.get(layout.id) || '',
+          position: layout.position || { x: 0, y: 0 },
+          size: layout.size || { width: 250, height: 80 }
+        };
+      }).filter(item => item !== null);
+      
+      return mergedData;
+    } catch (error) {
+      console.error('Failed to load sticker data:', error);
+      return [];
+    }
   }
 
   /**
@@ -148,6 +166,10 @@ class StickerDataManager {
    */
   async updateSticker(stickerData) {
     try {
+      if (!stickerData || typeof stickerData !== 'object') {
+        return { success: false, error: 'Invalid sticker data provided' };
+      }
+
       // Sanitize the incoming sticker data
       const sanitizedStickerData = {
         id: String(stickerData.id || Date.now()),
@@ -166,8 +188,12 @@ class StickerDataManager {
       const layoutData = await this.loadLayoutData();
       const contentData = await this.loadContentData();
       
+      // Create backups before updating
+      await backupJSONFile(this.layoutFilePath, 'pre-update');
+      await backupJSONFile(this.contentFilePath, 'pre-update');
+      
       // Update or add layout data
-      const layoutIndex = layoutData.findIndex(item => item.id === sanitizedStickerData.id);
+      const layoutIndex = layoutData.findIndex(item => item && item.id === sanitizedStickerData.id);
       if (layoutIndex !== -1) {
         layoutData[layoutIndex] = {
           id: sanitizedStickerData.id,
@@ -183,7 +209,7 @@ class StickerDataManager {
       }
       
       // Update or add content data
-      const contentIndex = contentData.findIndex(item => item.id === sanitizedStickerData.id);
+      const contentIndex = contentData.findIndex(item => item && item.id === sanitizedStickerData.id);
       if (contentIndex !== -1) {
         contentData[contentIndex] = {
           id: sanitizedStickerData.id,
@@ -218,6 +244,10 @@ class StickerDataManager {
    */
   async removeSticker(stickerId) {
     try {
+      if (!stickerId) {
+        return { success: false, error: 'No sticker ID provided' };
+      }
+      
       // Ensure stickerId is a string
       const sanitizedStickerId = String(stickerId);
       
@@ -225,9 +255,13 @@ class StickerDataManager {
       const layoutData = await this.loadLayoutData();
       const contentData = await this.loadContentData();
       
+      // Create backups before modifying
+      await backupJSONFile(this.layoutFilePath, 'pre-delete');
+      await backupJSONFile(this.contentFilePath, 'pre-delete');
+      
       // Remove the sticker from both files
-      const filteredLayoutData = layoutData.filter(item => item.id !== sanitizedStickerId);
-      const filteredContentData = contentData.filter(item => item.id !== sanitizedStickerId);
+      const filteredLayoutData = layoutData.filter(item => item && item.id !== sanitizedStickerId);
+      const filteredContentData = contentData.filter(item => item && item.id !== sanitizedStickerId);
       
       // Save both files
       const layoutSaved = await this.saveLayoutData(filteredLayoutData);
