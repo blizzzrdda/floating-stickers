@@ -68,3 +68,19 @@ out/
 ehthumbs.db
 Thumbs.db 
 /test-data
+
+# Added by Claude Task Master
+# Logs
+dev-debug.log
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+# OS specific
+# Task files
+tasks.json
+tasks/ 

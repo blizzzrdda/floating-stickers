@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sticker Settings</title>
+    <style>
+        :root {
+            --primary-color: #4a86e8;
+            --secondary-color: #6aa84f;
+            --background-color: #f5f5f5;
+            --card-background: #ffffff;
+            --text-color: #333333;
+            --border-color: #dddddd;
+            --hover-color: #e8f0fe;
+            --focus-color: #d2e3fc;
+            --disabled-color: #cccccc;
+            --error-color: #ea4335;
+            --success-color: #34a853;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        .settings-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: var(--card-background);
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h2 {
+            color: var(--secondary-color);
+            margin-top: 20px;
+            font-size: 1.2rem;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .help-text {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            border-color: var(--primary-color);
+            outline: none;
+            box-shadow: 0 0 0 2px var(--focus-color);
+        }
+
+        .range-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        input[type="range"] {
+            flex-grow: 1;
+        }
+
+        .range-value {
+            min-width: 40px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary-color);
+        }
+
+        input:focus + .slider {
+            box-shadow: 0 0 1px var(--primary-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .toggle-label {
+            font-weight: normal;
+        }
+
+        .button-group {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        button.primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        button.secondary {
+            background-color: var(--background-color);
+            color: var(--text-color);
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px var(--focus-color);
+        }
+
+        .status-message {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .status-message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .language-select {
+            margin-bottom: 20px;
+        }
+
+        .language-option {
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="settings-container">
+        <h1>Sticker Settings</h1>
+        
+        <h2>Speech-to-Text Preferences</h2>
+        
+        <div class="form-group">
+            <label for="defaultMicrophoneDevice">Default Microphone</label>
+            <select id="defaultMicrophoneDevice">
+                <option value="">System Default</option>
+                <!-- Will be populated dynamically -->
+            </select>
+            <div class="help-text">Select which microphone to use for speech recording.</div>
+        </div>
+        
+        <div class="form-group">
+            <label for="recordingSensitivity">Recording Sensitivity</label>
+            <div class="range-container">
+                <input type="range" id="recordingSensitivity" min="0" max="1" step="0.1" value="0.8">
+                <span class="range-value" id="sensitivityValue">0.8</span>
+            </div>
+            <div class="help-text">Higher values make the microphone more sensitive to sound.</div>
+        </div>
+        
+        <div class="form-group">
+            <label for="automaticRecordingTimeout">Automatic Recording Timeout (seconds)</label>
+            <input type="number" id="automaticRecordingTimeout" min="5" max="600" value="180">
+            <div class="help-text">Maximum recording duration before automatic stop (5-600 seconds).</div>
+        </div>
+        
+        <div class="form-group">
+            <label>Text Mode</label>
+            <div class="toggle-container">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="textAppendMode" checked>
+                    <span class="slider"></span>
+                </label>
+                <span class="toggle-label" id="appendModeLabel">Append Text</span>
+            </div>
+            <div class="help-text">Choose whether to append or replace existing text when adding speech transcription.</div>
+        </div>
+        
+        <div class="form-group">
+            <label>Language</label>
+            <div>
+                <label class="language-option">
+                    <input type="radio" name="language" value="en" checked> English
+                </label>
+                <label class="language-option">
+                    <input type="radio" name="language" value="es"> Spanish
+                </label>
+                <label class="language-option">
+                    <input type="radio" name="language" value="fr"> French
+                </label>
+                <label class="language-option">
+                    <input type="radio" name="language" value="de"> German
+                </label>
+                <label class="language-option">
+                    <input type="radio" name="language" value="ja"> Japanese
+                </label>
+                <label class="language-option">
+                    <input type="radio" name="language" value="zh"> Chinese
+                </label>
+            </div>
+            <div class="help-text">Select the language for speech recognition.</div>
+        </div>
+        
+        <div class="button-group">
+            <button id="resetBtn" class="secondary">Reset to Defaults</button>
+            <button id="saveBtn" class="primary">Save Settings</button>
+        </div>
+        
+        <div id="statusMessage" class="status-message"></div>
+    </div>
+
+    <script>
+        // Elements
+        const defaultMicrophoneSelect = document.getElementById('defaultMicrophoneDevice');
+        const sensitivitySlider = document.getElementById('recordingSensitivity');
+        const sensitivityValue = document.getElementById('sensitivityValue');
+        const timeoutInput = document.getElementById('automaticRecordingTimeout');
+        const appendModeToggle = document.getElementById('textAppendMode');
+        const appendModeLabel = document.getElementById('appendModeLabel');
+        const languageRadios = document.getElementsByName('language');
+        const saveBtn = document.getElementById('saveBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const statusMessage = document.getElementById('statusMessage');
+
+        // Update sensitivity value display when slider changes
+        sensitivitySlider.addEventListener('input', () => {
+            sensitivityValue.textContent = sensitivitySlider.value;
+        });
+
+        // Update append mode label when toggle changes
+        appendModeToggle.addEventListener('change', () => {
+            appendModeLabel.textContent = appendModeToggle.checked ? 'Append Text' : 'Replace Text';
+        });
+
+        // Load available microphone devices
+        async function loadMicrophoneDevices() {
+            try {
+                // Request microphone permission to get device list
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Stop the stream immediately after getting permission
+                stream.getTracks().forEach(track => track.stop());
+                
+                // Get the list of devices
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                
+                // Filter for audio input devices
+                const audioInputDevices = devices.filter(device => device.kind === 'audioinput');
+                
+                // Clear existing options except the default
+                while (defaultMicrophoneSelect.options.length > 1) {
+                    defaultMicrophoneSelect.remove(1);
+                }
+                
+                // Add options for each device
+                audioInputDevices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Microphone ${defaultMicrophoneSelect.options.length}`;
+                    defaultMicrophoneSelect.appendChild(option);
+                });
+                
+                console.log('Loaded microphone devices:', audioInputDevices.length);
+            } catch (error) {
+                console.error('Error loading microphone devices:', error);
+                showStatus('Could not access microphone devices. Please check permissions.', 'error');
+            }
+        }
+
+        // Load preferences from storage
+        async function loadPreferences() {
+            try {
+                const result = await window.stickerAPI.getPreferences();
+                
+                if (result.success) {
+                    const prefs = result.preferences;
+                    
+                    // Set values in form
+                    if (prefs.defaultMicrophoneDevice) {
+                        defaultMicrophoneSelect.value = prefs.defaultMicrophoneDevice;
+                    }
+                    
+                    sensitivitySlider.value = prefs.recordingSensitivity;
+                    sensitivityValue.textContent = prefs.recordingSensitivity;
+                    
+                    timeoutInput.value = prefs.automaticRecordingTimeout;
+                    
+                    appendModeToggle.checked = prefs.textAppendMode;
+                    appendModeLabel.textContent = prefs.textAppendMode ? 'Append Text' : 'Replace Text';
+                    
+                    // Set language radio
+                    for (const radio of languageRadios) {
+                        if (radio.value === prefs.language) {
+                            radio.checked = true;
+                            break;
+                        }
+                    }
+                    
+                    console.log('Preferences loaded successfully');
+                } else {
+                    console.error('Failed to load preferences:', result.error);
+                    showStatus('Failed to load preferences. Using defaults.', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading preferences:', error);
+                showStatus('Error loading preferences. Using defaults.', 'error');
+            }
+        }
+
+        // Save preferences to storage
+        async function savePreferences() {
+            try {
+                // Get selected language
+                let selectedLanguage = 'en';
+                for (const radio of languageRadios) {
+                    if (radio.checked) {
+                        selectedLanguage = radio.value;
+                        break;
+                    }
+                }
+                
+                // Create preferences object
+                const preferences = {
+                    defaultMicrophoneDevice: defaultMicrophoneSelect.value,
+                    recordingSensitivity: parseFloat(sensitivitySlider.value),
+                    automaticRecordingTimeout: parseInt(timeoutInput.value, 10),
+                    textAppendMode: appendModeToggle.checked,
+                    language: selectedLanguage
+                };
+                
+                // Validate timeout value
+                if (preferences.automaticRecordingTimeout < 5) {
+                    preferences.automaticRecordingTimeout = 5;
+                } else if (preferences.automaticRecordingTimeout > 600) {
+                    preferences.automaticRecordingTimeout = 600;
+                }
+                
+                // Save preferences
+                const result = await window.stickerAPI.setPreferences(preferences);
+                
+                if (result.success) {
+                    console.log('Preferences saved successfully');
+                    showStatus('Settings saved successfully!', 'success');
+                } else {
+                    console.error('Failed to save preferences:', result.error);
+                    showStatus('Failed to save settings. Please try again.', 'error');
+                }
+            } catch (error) {
+                console.error('Error saving preferences:', error);
+                showStatus('Error saving settings. Please try again.', 'error');
+            }
+        }
+
+        // Reset preferences to defaults
+        async function resetPreferences() {
+            try {
+                const result = await window.stickerAPI.resetPreferences();
+                
+                if (result.success) {
+                    console.log('Preferences reset successfully');
+                    showStatus('Settings reset to defaults.', 'success');
+                    
+                    // Reload preferences to update form
+                    await loadPreferences();
+                } else {
+                    console.error('Failed to reset preferences:', result.error);
+                    showStatus('Failed to reset settings. Please try again.', 'error');
+                }
+            } catch (error) {
+                console.error('Error resetting preferences:', error);
+                showStatus('Error resetting settings. Please try again.', 'error');
+            }
+        }
+
+        // Show status message
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = 'status-message ' + type;
+            statusMessage.style.display = 'block';
+            
+            // Hide after 5 seconds
+            setTimeout(() => {
+                statusMessage.style.display = 'none';
+            }, 5000);
+        }
+
+        // Event listeners
+        saveBtn.addEventListener('click', savePreferences);
+        resetBtn.addEventListener('click', resetPreferences);
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await loadMicrophoneDevices();
+                await loadPreferences();
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showStatus('Error initializing settings. Please try again.', 'error');
+            }
+        });
+    </script>
+</body>
+</html>

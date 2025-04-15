@@ -98,6 +98,87 @@
             color: #999;
             font-style: italic;
         }
+
+        /* Microphone button styles */
+        .microphone-button {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: #f0f0f0;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            transition: all 0.2s ease;
+            z-index: 100;
+            -webkit-app-region: no-drag; /* Make button clickable */
+        }
+
+        .microphone-button:hover {
+            background-color: #e0e0e0;
+            transform: scale(1.05);
+        }
+
+        .microphone-button:active {
+            transform: scale(0.95);
+        }
+
+        .microphone-button svg {
+            width: 16px;
+            height: 16px;
+            fill: #555;
+            transition: fill 0.2s ease;
+        }
+
+        .microphone-button:hover svg {
+            fill: #333;
+        }
+
+        /* Recording state */
+        .microphone-button.recording {
+            background-color: #ff4a4a;
+            animation: pulse 1.5s infinite;
+        }
+
+        .microphone-button.recording svg {
+            fill: white;
+        }
+
+        /* Processing state */
+        .microphone-button.processing {
+            background-color: #ffaa44;
+            pointer-events: none;
+        }
+
+        .microphone-button.processing svg {
+            fill: white;
+            animation: spin 1.5s linear infinite;
+        }
+
+        /* Animations */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(255, 74, 74, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 74, 74, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 74, 74, 0); }
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Respect user preference for reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+            .microphone-button, .microphone-button.recording, .microphone-button.processing {
+                animation: none;
+                transition: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -107,6 +188,12 @@
             <button class="sticker-close">×</button>
         </div>
         <div class="sticker-content" contenteditable="true" spellcheck="false" data-plaintext-only="true"></div>
+        <button class="microphone-button" title="Record speech (Ctrl+Shift+M)" aria-label="Record speech">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+            </svg>
+        </button>
     </div>
 
     <script>
@@ -114,6 +201,7 @@
         const sticker = document.querySelector('.sticker');
         const closeBtn = document.querySelector('.sticker-close');
         const content = document.querySelector('.sticker-content');
+        const microphoneBtn = document.querySelector('.microphone-button');
 
         // Ensure elements are visible immediately
         if (closeBtn) {
@@ -353,6 +441,450 @@
 
         // Position tracking is handled by the main process through the 'moved' event
         // and communicated via the 'position-updated' IPC event
+
+        // ===== Microphone Button and Speech-to-Text Functionality =====
+
+        // Audio recorder state
+        let isRecording = false;
+        let isProcessing = false;
+
+        // Import the audioRecorder module
+        let audioRecorder = null;
+
+        // Dynamically import the audioRecorder module
+        async function loadAudioRecorder() {
+            try {
+                // Create a script element to load the module
+                const script = document.createElement('script');
+                script.type = 'module';
+                script.textContent = `
+                    import audioRecorder from './services/audioRecorder.js';
+                    window.audioRecorder = audioRecorder;
+                    document.dispatchEvent(new CustomEvent('audioRecorderLoaded'));
+                `;
+                document.head.appendChild(script);
+
+                // Wait for the module to load
+                await new Promise(resolve => {
+                    document.addEventListener('audioRecorderLoaded', () => {
+                        resolve();
+                    }, { once: true });
+
+                    // Timeout after 5 seconds
+                    setTimeout(() => {
+                        resolve();
+                    }, 5000);
+                });
+
+                return window.audioRecorder;
+            } catch (error) {
+                console.error('Failed to load audio recorder:', error);
+                return null;
+            }
+        }
+
+        // Initialize the audio recorder
+        async function initializeAudioRecorder() {
+            try {
+                audioRecorder = await loadAudioRecorder();
+
+                if (!audioRecorder) {
+                    console.error('Audio recorder not available');
+                    return false;
+                }
+
+                // Set up callbacks
+                audioRecorder.setStatusChangeCallback(handleRecordingStatusChange);
+                audioRecorder.setRecordingCompleteCallback(handleRecordingComplete);
+                audioRecorder.setErrorCallback(handleRecordingError);
+
+                // Set up network status monitoring
+                setupNetworkMonitoring();
+
+                return true;
+            } catch (error) {
+                console.error('Error initializing audio recorder:', error);
+                return false;
+            }
+        }
+
+        // Monitor network status to process offline recordings when connection is restored
+        function setupNetworkMonitoring() {
+            // Check initial status
+            if (navigator.onLine && offlineRecordings.length > 0) {
+                setTimeout(checkOfflineRecordings, 2000);
+            }
+
+            // Listen for online event
+            window.addEventListener('online', () => {
+                console.log('Network connection restored');
+                if (offlineRecordings.length > 0) {
+                    // Wait a bit to ensure connection is stable
+                    setTimeout(checkOfflineRecordings, 2000);
+                }
+            });
+
+            // Listen for offline event
+            window.addEventListener('offline', () => {
+                console.log('Network connection lost');
+            });
+        }
+
+        // Handle microphone button click
+        microphoneBtn.addEventListener('click', async () => {
+            // If we're already processing, do nothing
+            if (isProcessing) return;
+
+            // If we're recording, stop recording
+            if (isRecording) {
+                stopRecording();
+                return;
+            }
+
+            // Otherwise, start recording
+            startRecording();
+        });
+
+        // Add keyboard shortcut (Ctrl+Shift+M) for microphone
+        document.addEventListener('keydown', (event) => {
+            // Check for Ctrl+Shift+M
+            if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === 'm') {
+                event.preventDefault();
+
+                // If we're already processing, do nothing
+                if (isProcessing) return;
+
+                // Toggle recording state
+                if (isRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+            }
+        });
+
+        // Start recording
+        async function startRecording() {
+            try {
+                // Initialize audio recorder if not already initialized
+                if (!audioRecorder) {
+                    const initialized = await initializeAudioRecorder();
+                    if (!initialized) {
+                        throw new Error('Failed to initialize audio recorder');
+                    }
+                }
+
+                // Update UI
+                microphoneBtn.classList.add('recording');
+                isRecording = true;
+
+                // Start recording
+                await audioRecorder.startRecording();
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                resetRecordingState();
+                alert('Failed to start recording: ' + error.message);
+            }
+        }
+
+        // Stop recording
+        async function stopRecording() {
+            try {
+                if (!audioRecorder || !isRecording) return;
+
+                // Update UI
+                microphoneBtn.classList.remove('recording');
+                microphoneBtn.classList.add('processing');
+                isRecording = false;
+                isProcessing = true;
+
+                // Stop recording
+                await audioRecorder.stopRecording();
+            } catch (error) {
+                console.error('Error stopping recording:', error);
+                resetRecordingState();
+                alert('Failed to stop recording: ' + error.message);
+            }
+        }
+
+        // Handle recording status change
+        function handleRecordingStatusChange(status, data) {
+            console.log('Recording status:', status, data);
+
+            switch (status) {
+                case 'recording':
+                    // Recording started successfully
+                    isRecording = true;
+                    microphoneBtn.classList.add('recording');
+                    break;
+
+                case 'stopping':
+                    // Recording is stopping
+                    isRecording = false;
+                    microphoneBtn.classList.remove('recording');
+                    break;
+
+                case 'processing':
+                    // Audio is being processed
+                    isProcessing = true;
+                    microphoneBtn.classList.add('processing');
+                    break;
+
+                case 'complete':
+                    // Processing is complete, but we'll wait for the transcription
+                    break;
+
+                case 'error':
+                    // Error occurred
+                    resetRecordingState();
+                    alert('Recording error: ' + (data.error?.message || 'Unknown error'));
+                    break;
+
+                case 'cancelled':
+                    // Recording was cancelled
+                    resetRecordingState();
+                    break;
+            }
+        }
+
+        // Store for offline recordings
+        const offlineRecordings = [];
+
+        // Check if we have stored recordings to process
+        async function checkOfflineRecordings() {
+            try {
+                // Skip if no offline recordings
+                if (offlineRecordings.length === 0) return;
+
+                // Try to process the first recording
+                const recording = offlineRecordings[0];
+
+                // Get preferences
+                let preferences = {
+                    textAppendMode: true,
+                    language: 'en'
+                };
+
+                try {
+                    // Get preferences from the API
+                    const prefsResult = await window.stickerAPI.getPreferences();
+                    if (prefsResult.success) {
+                        preferences.textAppendMode = prefsResult.preferences.textAppendMode !== undefined ?
+                            prefsResult.preferences.textAppendMode : true;
+                        preferences.language = prefsResult.preferences.language || 'en';
+                    }
+                } catch (prefsError) {
+                    console.warn('Could not load preferences for offline recording, using defaults:', prefsError);
+                }
+
+                // Attempt to transcribe
+                const result = await window.stickerAPI.transcribeAudio(recording.filePath, {
+                    language: preferences.language
+                });
+
+                if (result.success) {
+                    // Insert the transcribed text based on preference
+                    if (preferences.textAppendMode) {
+                        appendText(result.text);
+                    } else {
+                        replaceText(result.text);
+                    }
+
+                    console.log('Offline recording transcribed successfully:', result.text);
+
+                    // Remove from queue
+                    offlineRecordings.shift();
+
+                    // Notify user
+                    alert('Successfully transcribed saved recording!');
+
+                    // Process next recording if any
+                    if (offlineRecordings.length > 0) {
+                        setTimeout(checkOfflineRecordings, 1000);
+                    }
+                }
+
+                // Clean up the file
+                await window.stickerAPI.deleteTempAudio(recording.filePath);
+            } catch (error) {
+                console.error('Failed to process offline recordings:', error);
+            }
+        }
+
+        // Handle recording complete
+        async function handleRecordingComplete(filePath, audioBlob, options = {}) {
+            try {
+                console.log('Recording complete, transcribing...', filePath);
+
+                // Get preferences from options or use defaults
+                const textAppendMode = options.textAppendMode !== undefined ?
+                    options.textAppendMode : true; // Default to append mode
+                const language = options.language || 'en'; // Default to English
+
+                console.log(`Using preferences: textAppendMode=${textAppendMode}, language=${language}`);
+
+                // Transcribe the audio with language preference
+                const result = await window.stickerAPI.transcribeAudio(filePath, {
+                    language: language
+                });
+
+                if (result.success) {
+                    if (textAppendMode) {
+                        // Append mode: Add text at the end with proper spacing
+                        appendText(result.text);
+                    } else {
+                        // Replace mode: Replace all content
+                        replaceText(result.text);
+                    }
+
+                    console.log('Transcription successful:', result.text);
+
+                    // Check if we have any offline recordings to process
+                    if (offlineRecordings.length > 0) {
+                        setTimeout(checkOfflineRecordings, 1000);
+                    }
+                } else {
+                    throw new Error(result.error || 'Transcription failed');
+                }
+            } catch (error) {
+                console.error('Transcription error:', error);
+
+                // Store the recording for later processing
+                if (error.message.includes('network') ||
+                    error.message.includes('connection') ||
+                    error.message.includes('unavailable') ||
+                    error.message.includes('timeout')) {
+
+                    // Store for later
+                    offlineRecordings.push({
+                        filePath,
+                        timestamp: Date.now()
+                    });
+
+                    // Notify user
+                    alert('Network issue detected. Your recording has been saved and will be transcribed when connection is restored.');
+                } else {
+                    // Other error
+                    alert('Failed to transcribe audio: ' + error.message);
+                }
+            } finally {
+                // Reset the recording state
+                resetRecordingState();
+
+                // Only clean up the file if it's not stored for offline processing
+                if (!offlineRecordings.some(r => r.filePath === filePath)) {
+                    try {
+                        await window.stickerAPI.deleteTempAudio(filePath);
+                    } catch (cleanupError) {
+                        console.error('Failed to clean up temp audio file:', cleanupError);
+                    }
+                }
+            }
+        }
+
+        // Handle recording error
+        function handleRecordingError(errorType, errorMessage) {
+            console.error('Recording error:', errorType, errorMessage);
+            resetRecordingState();
+            alert('Recording error: ' + errorMessage);
+        }
+
+        // Reset recording state
+        function resetRecordingState() {
+            isRecording = false;
+            isProcessing = false;
+            microphoneBtn.classList.remove('recording');
+            microphoneBtn.classList.remove('processing');
+        }
+
+        // Function to append text to the end of the content
+        function appendText(text) {
+            // Add a newline if there's already content
+            const currentContent = content.textContent || '';
+            const newContent = currentContent.trim() + (currentContent.trim() ? '\n' : '') + text;
+            content.textContent = newContent;
+
+            // Move cursor to the end
+            const range = document.createRange();
+            range.selectNodeContents(content);
+            range.collapse(false); // collapse to end
+
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            // Trigger content change event to save the updated content
+            content.dispatchEvent(new Event('input', { bubbles: true }));
+            content.dispatchEvent(new Event('blur', { bubbles: true }));
+        }
+
+        // Function to replace all content with new text
+        function replaceText(text) {
+            // Replace all content
+            content.textContent = text;
+
+            // Move cursor to the end
+            const range = document.createRange();
+            range.selectNodeContents(content);
+            range.collapse(false); // collapse to end
+
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            // Trigger content change event to save the updated content
+            content.dispatchEvent(new Event('input', { bubbles: true }));
+            content.dispatchEvent(new Event('blur', { bubbles: true }));
+        }
+
+        // Insert text at cursor position or append to content
+        function insertTextAtCursor(text) {
+            // Focus the content element
+            content.focus();
+
+            // Get the current selection
+            const selection = window.getSelection();
+
+            // Check if the selection is within our content element
+            let isSelectionInContent = false;
+            let node = selection.anchorNode;
+            while (node) {
+                if (node === content) {
+                    isSelectionInContent = true;
+                    break;
+                }
+                node = node.parentNode;
+            }
+
+            if (isSelectionInContent && selection.rangeCount > 0) {
+                // Insert at cursor position
+                const range = selection.getRangeAt(0);
+                range.deleteContents();
+                range.insertNode(document.createTextNode(text));
+
+                // Move cursor to end of inserted text
+                range.setStartAfter(range.endContainer);
+                range.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(range);
+            } else {
+                // Append to the end of content
+                const currentContent = content.textContent || '';
+                const newContent = currentContent + (currentContent ? ' ' : '') + text;
+                content.textContent = newContent;
+
+                // Move cursor to end
+                const range = document.createRange();
+                range.selectNodeContents(content);
+                range.collapse(false);
+                selection.removeAllRanges();
+                selection.addRange(range);
+            }
+
+            // Trigger content change event to save the updated content
+            content.dispatchEvent(new Event('input', { bubbles: true }));
+            content.dispatchEvent(new Event('blur', { bubbles: true }));
+        }
     </script>
 </body>
 </html>

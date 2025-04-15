@@ -1,6 +1,6 @@
-const fs = require('fs');
-const path = require('path');
-const { safeReadJSON, safeWriteJSON, backupJSONFile, validateJSONData, validateArrayData } = require('./jsonUtils');
+import fs from 'fs';
+import path from 'path';
+import { safeReadJSON, safeWriteJSON, backupJSONFile, validateJSONData, validateArrayData } from './jsonUtils.js';
 
 /**
  * Handles loading sticker layout and content data
@@ -14,11 +14,11 @@ class StickerDataManager {
     this.userDataPath = userDataPath;
     this.layoutFilePath = path.join(userDataPath, 'stickers-layout.json');
     this.contentFilePath = path.join(userDataPath, 'stickers-content.json');
-    
+
     // Ensure the user data directory exists
     this.ensureDirectoryExists();
   }
-  
+
   /**
    * Ensure the user data directory exists
    * @private
@@ -83,14 +83,14 @@ class StickerDataManager {
         console.error('Attempted to save invalid layout data');
         return false;
       }
-      
+
       // Filter out any invalid items
-      const validLayoutData = layoutData.filter(item => 
-        item && item.id && 
+      const validLayoutData = layoutData.filter(item =>
+        item && item.id &&
         item.position && typeof item.position.x === 'number' && typeof item.position.y === 'number' &&
         item.size && typeof item.size.width === 'number' && typeof item.size.height === 'number'
       );
-      
+
       return await safeWriteJSON(this.layoutFilePath, validLayoutData);
     } catch (error) {
       console.error('Failed to save layout data:', error);
@@ -109,12 +109,12 @@ class StickerDataManager {
         console.error('Attempted to save invalid content data');
         return false;
       }
-      
+
       // Filter out any invalid items
-      const validContentData = contentData.filter(item => 
+      const validContentData = contentData.filter(item =>
         item && item.id && typeof item.content === 'string'
       );
-      
+
       return await safeWriteJSON(this.contentFilePath, validContentData);
     } catch (error) {
       console.error('Failed to save content data:', error);
@@ -128,10 +128,20 @@ class StickerDataManager {
    */
   async loadStickerData() {
     try {
+      // Check if files exist before trying to load them
+      const layoutExists = fs.existsSync(this.layoutFilePath);
+      const contentExists = fs.existsSync(this.contentFilePath);
+
+      // If neither file exists, return an empty array without writing anything
+      if (!layoutExists && !contentExists) {
+        console.log('No sticker data files exist yet, returning empty array');
+        return [];
+      }
+
       // Load layout and content data
       const layoutData = await this.loadLayoutData();
       const contentData = await this.loadContentData();
-      
+
       // Create a map of content by ID for easy lookup
       const contentMap = new Map();
       contentData.forEach(item => {
@@ -139,11 +149,11 @@ class StickerDataManager {
           contentMap.set(item.id, item.content);
         }
       });
-      
+
       // Merge the data
       const mergedData = layoutData.map(layout => {
         if (!layout || !layout.id) return null;
-        
+
         return {
           id: layout.id,
           content: contentMap.get(layout.id) || '',
@@ -151,7 +161,7 @@ class StickerDataManager {
           size: layout.size || { width: 250, height: 80 }
         };
       }).filter(item => item !== null);
-      
+
       return mergedData;
     } catch (error) {
       console.error('Failed to load sticker data:', error);
@@ -183,15 +193,15 @@ class StickerDataManager {
           height: Number(stickerData.size?.height || 80)
         }
       };
-      
+
       // Load existing data
       const layoutData = await this.loadLayoutData();
       const contentData = await this.loadContentData();
-      
+
       // Create backups before updating
       await backupJSONFile(this.layoutFilePath, 'pre-update');
       await backupJSONFile(this.contentFilePath, 'pre-update');
-      
+
       // Update or add layout data
       const layoutIndex = layoutData.findIndex(item => item && item.id === sanitizedStickerData.id);
       if (layoutIndex !== -1) {
@@ -207,7 +217,7 @@ class StickerDataManager {
           size: sanitizedStickerData.size
         });
       }
-      
+
       // Update or add content data
       const contentIndex = contentData.findIndex(item => item && item.id === sanitizedStickerData.id);
       if (contentIndex !== -1) {
@@ -221,12 +231,12 @@ class StickerDataManager {
           content: sanitizedStickerData.content
         });
       }
-      
+
       // Save both files
       const layoutSaved = await this.saveLayoutData(layoutData);
       const contentSaved = await this.saveContentData(contentData);
-      
-      return { 
+
+      return {
         success: layoutSaved && contentSaved,
         layoutSaved,
         contentSaved
@@ -247,27 +257,27 @@ class StickerDataManager {
       if (!stickerId) {
         return { success: false, error: 'No sticker ID provided' };
       }
-      
+
       // Ensure stickerId is a string
       const sanitizedStickerId = String(stickerId);
-      
+
       // Load existing data
       const layoutData = await this.loadLayoutData();
       const contentData = await this.loadContentData();
-      
+
       // Create backups before modifying
       await backupJSONFile(this.layoutFilePath, 'pre-delete');
       await backupJSONFile(this.contentFilePath, 'pre-delete');
-      
+
       // Remove the sticker from both files
       const filteredLayoutData = layoutData.filter(item => item && item.id !== sanitizedStickerId);
       const filteredContentData = contentData.filter(item => item && item.id !== sanitizedStickerId);
-      
+
       // Save both files
       const layoutSaved = await this.saveLayoutData(filteredLayoutData);
       const contentSaved = await this.saveContentData(filteredContentData);
-      
-      return { 
+
+      return {
         success: layoutSaved && contentSaved,
         layoutSaved,
         contentSaved
@@ -283,12 +293,20 @@ class StickerDataManager {
    * @param {string} html - HTML content to strip
    * @returns {string} Plain text content
    */
-  stripHtml(html) {
+  async stripHtml(html) {
     if (!html) return '';
     // Create a temporary DOM element
-    const tempElement = new (require('jsdom').JSDOM)('').window.document.createElement('div');
-    tempElement.innerHTML = html;
-    return tempElement.textContent || tempElement.innerText || '';
+    try {
+      // Dynamic import for jsdom
+      const { JSDOM } = await import('jsdom');
+      const tempElement = new JSDOM('').window.document.createElement('div');
+      tempElement.innerHTML = html;
+      return tempElement.textContent || tempElement.innerText || '';
+    } catch (error) {
+      console.error('Error stripping HTML:', error);
+      // Fallback to basic string replacement if JSDOM fails
+      return html.replace(/<[^>]*>/g, '');
+    }
   }
 
   /**
@@ -296,10 +314,10 @@ class StickerDataManager {
    * @param {string} content - Content to sanitize
    * @returns {string} Sanitized content
    */
-  sanitizeContent(content) {
+  async sanitizeContent(content) {
     if (!content) return '';
-    return this.stripHtml(content);
+    return await this.stripHtml(content);
   }
 }
 
-module.exports = StickerDataManager; 
+export default StickerDataManager;

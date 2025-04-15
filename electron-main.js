@@ -1,13 +1,146 @@
-const { app, BrowserWindow, Menu, ipcMain, Tray, screen, globalShortcut } = require('electron');
-const path = require('path');
-const fs = require('fs');
-const StickerDataManager = require('./utils/stickerUtils');
+import { app, BrowserWindow, Menu, ipcMain, Tray, screen, globalShortcut } from 'electron';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import StickerDataManager from './utils/stickerUtils.js';
+
+// Get the directory name of the current module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Define the user data path
 const userDataPath = app.getPath('userData');
 
 // Initialize the sticker data manager
 const stickerManager = new StickerDataManager(userDataPath);
+
+// Import services (will be initialized when imported)
+// These services are initialized dynamically
+let whisperService;
+let preferencesService;
+
+// We need to import the services after the app is ready
+// because they use ES modules and require the app to be initialized
+function initializeServices() {
+  try {
+    // Import and initialize services
+    import('./services/audioRecordingService.js')
+      .then(module => {
+        audioRecordingService = module.default;
+        console.log('Audio Recording Service initialized');
+      })
+      .catch(error => {
+        console.error('Failed to initialize Audio Recording Service:', error);
+      });
+
+    import('./services/whisperService.js')
+      .then(module => {
+        whisperService = module.default;
+        console.log('Whisper Service initialized');
+
+        // Set up IPC handler for transcription
+        ipcMain.handle('transcribe-audio', async (_, filePath, options) => {
+          try {
+            if (!whisperService) {
+              throw new Error('Whisper Service not initialized');
+            }
+
+            // Get preferences for transcription
+            let transcriptionOptions = { language: 'en' };
+
+            // If preferences service is available, get language preference
+            if (preferencesService) {
+              const prefs = preferencesService.getPreferences();
+              transcriptionOptions.language = prefs.language || 'en';
+            }
+
+            // Override with any provided options
+            if (options) {
+              transcriptionOptions = { ...transcriptionOptions, ...options };
+            }
+
+            const transcription = await whisperService.transcribeFile(filePath, transcriptionOptions);
+            return { success: true, text: transcription };
+          } catch (error) {
+            console.error('Transcription error:', error);
+            return { success: false, error: error.message };
+          }
+        });
+      })
+      .catch(error => {
+        console.error('Failed to initialize Whisper Service:', error);
+      });
+
+    // Initialize preferences service
+    import('./services/preferencesService.js')
+      .then(module => {
+        preferencesService = module.default;
+        console.log('Preferences Service initialized');
+
+        // Set up IPC handlers for preferences
+        ipcMain.handle('get-preferences', async () => {
+          try {
+            if (!preferencesService) {
+              throw new Error('Preferences Service not initialized');
+            }
+
+            const preferences = preferencesService.getPreferences();
+            return { success: true, preferences };
+          } catch (error) {
+            console.error('Error getting preferences:', error);
+            return { success: false, error: error.message };
+          }
+        });
+
+        ipcMain.handle('set-preference', async (_, key, value) => {
+          try {
+            if (!preferencesService) {
+              throw new Error('Preferences Service not initialized');
+            }
+
+            const success = preferencesService.setPreference(key, value);
+            return { success };
+          } catch (error) {
+            console.error('Error setting preference:', error);
+            return { success: false, error: error.message };
+          }
+        });
+
+        ipcMain.handle('set-preferences', async (_, prefsObject) => {
+          try {
+            if (!preferencesService) {
+              throw new Error('Preferences Service not initialized');
+            }
+
+            const success = preferencesService.setPreferences(prefsObject);
+            return { success };
+          } catch (error) {
+            console.error('Error setting preferences:', error);
+            return { success: false, error: error.message };
+          }
+        });
+
+        ipcMain.handle('reset-preferences', async () => {
+          try {
+            if (!preferencesService) {
+              throw new Error('Preferences Service not initialized');
+            }
+
+            const success = preferencesService.resetToDefaults();
+            return { success };
+          } catch (error) {
+            console.error('Error resetting preferences:', error);
+            return { success: false, error: error.message };
+          }
+        });
+      })
+      .catch(error => {
+        console.error('Failed to initialize Preferences Service:', error);
+      });
+  } catch (error) {
+    console.error('Error initializing services:', error);
+  }
+}
 
 let mainWindow;
 let tray = null;
@@ -82,6 +215,12 @@ function createTray() {
   }
 
   try {
+    // Destroy existing tray if it exists
+    if (tray !== null) {
+      tray.destroy();
+    }
+
+    // Create new tray with icon
     tray = new Tray(trayIcon);
 
     const contextMenu = Menu.buildFromTemplate([
@@ -117,6 +256,13 @@ function createTray() {
 
     tray.setToolTip('FloatingStickers');
     tray.setContextMenu(contextMenu);
+
+    // Add click handler for Windows to show context menu on left-click as well
+    if (process.platform === 'win32') {
+      tray.on('click', () => {
+        tray.popUpContextMenu();
+      });
+    }
   } catch (error) {
     console.error('Error creating tray:', error);
     // Create a simple window instead as fallback
@@ -340,6 +486,9 @@ function createStickerWindow(stickerData = null) {
 app.whenReady().then(async () => {
   createWindow();
 
+  // Initialize our services
+  initializeServices();
+
   // Load saved stickers from file
   await loadSavedStickers();
 
@@ -376,6 +525,15 @@ async function loadSavedStickers() {
 
     console.log(`Loading ${stickers.length} stickers`);
 
+    // If no stickers found, don't do anything
+    if (stickers.length === 0) {
+      console.log('No stickers found to load');
+      return;
+    }
+
+    // Add a small delay to ensure the app is fully initialized before creating sticker windows
+    await new Promise(resolve => setTimeout(resolve, 500));
+
     // Create windows for each sticker
     for (const sticker of stickers) {
       if (!sticker || !sticker.id) {
@@ -386,6 +544,9 @@ async function loadSavedStickers() {
       try {
         // Create the sticker window
         createStickerWindow(sticker);
+
+        // Add a small delay between creating each sticker to prevent overwhelming the system
+        await new Promise(resolve => setTimeout(resolve, 100));
       } catch (stickerError) {
         console.error(`Error creating sticker window for sticker ${sticker.id}:`, stickerError);
         // Continue with next sticker
@@ -397,10 +558,7 @@ async function loadSavedStickers() {
   }
 }
 
-// Function to strip HTML tags from content
-function stripHtml(html) {
-  return stickerManager.stripHtml(html);
-}
+// Note: HTML stripping is handled by the stickerManager
 
 // Toggle visibility of all stickers
 function toggleStickersVisibility() {
@@ -423,6 +581,8 @@ function toggleStickersVisibility() {
     }
   });
 }
+
+// Settings window functionality has been removed
 
 // Make sure we properly clean up before quitting
 app.on('before-quit', async () => {
@@ -475,7 +635,7 @@ app.on('window-all-closed', function () {
 });
 
 // IPC for saving stickers data to file system
-ipcMain.handle('save-stickers', async (event, stickersData) => {
+ipcMain.handle('save-stickers', async (_, stickersData) => {
   try {
     if (!Array.isArray(stickersData)) {
       return { success: false, error: 'Invalid data format' };
@@ -527,13 +687,13 @@ ipcMain.handle('load-stickers', async () => {
 });
 
 // IPC for creating a new sticker
-ipcMain.handle('create-sticker', async (event, stickerData) => {
+ipcMain.handle('create-sticker', async (_, stickerData) => {
   const stickerId = createStickerWindow(stickerData);
   return { success: true, id: stickerId };
 });
 
 // IPC for updating sticker position
-ipcMain.handle('update-sticker', async (event, stickerData) => {
+ipcMain.handle('update-sticker', async (_, stickerData) => {
   try {
     // Use the sticker manager to update the sticker
     const result = await stickerManager.updateSticker(stickerData);
@@ -545,7 +705,7 @@ ipcMain.handle('update-sticker', async (event, stickerData) => {
 });
 
 // IPC for removing a sticker
-ipcMain.handle('remove-sticker', async (event, stickerId) => {
+ipcMain.handle('remove-sticker', async (_, stickerId) => {
   try {
     // Use the sticker manager to remove the sticker
     const result = await stickerManager.removeSticker(stickerId);

@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Safely reads and parses a JSON file with comprehensive error handling
@@ -10,15 +10,13 @@ const path = require('path');
 async function safeReadJSON(filePath, defaultValue = {}) {
   try {
     if (!fs.existsSync(filePath)) {
-      console.log(`File doesn't exist, creating with default value: ${filePath}`);
-      await fs.promises.writeFile(filePath, JSON.stringify(defaultValue, null, 2));
+      console.log(`File doesn't exist, will use default value: ${filePath}`);
       return defaultValue;
     }
 
     const data = await fs.promises.readFile(filePath, 'utf8');
     if (!data || data.trim() === '') {
-      console.warn(`Empty file found: ${filePath}, recreating with default value`);
-      await fs.promises.writeFile(filePath, JSON.stringify(defaultValue, null, 2));
+      console.warn(`Empty file found: ${filePath}, will use default value`);
       return defaultValue;
     }
 
@@ -27,7 +25,7 @@ async function safeReadJSON(filePath, defaultValue = {}) {
       return parsed;
     } catch (parseError) {
       console.error(`Error parsing JSON from ${filePath}:`, parseError);
-      
+
       // Create backup of corrupted file
       try {
         const backupPath = `${filePath}.corrupt-${Date.now()}`;
@@ -36,7 +34,7 @@ async function safeReadJSON(filePath, defaultValue = {}) {
       } catch (backupError) {
         console.error(`Failed to create backup of corrupted file:`, backupError);
       }
-      
+
       // Try to delete and recreate the file
       try {
         await fs.promises.unlink(filePath);
@@ -45,7 +43,7 @@ async function safeReadJSON(filePath, defaultValue = {}) {
       } catch (recreateError) {
         console.error(`Failed to recreate ${filePath}:`, recreateError);
       }
-      
+
       return defaultValue;
     }
   } catch (error) {
@@ -77,10 +75,10 @@ async function safeWriteJSON(filePath, data) {
         console.warn(`Failed to create backup before write: ${filePath}`, backupError);
       }
     }
-    
+
     // Write data directly to a string first to validate it
     const jsonString = JSON.stringify(data, null, 2);
-    
+
     // Validate the JSON
     try {
       JSON.parse(jsonString);
@@ -88,7 +86,7 @@ async function safeWriteJSON(filePath, data) {
       console.error(`Attempted to write invalid JSON to ${filePath}`, validateError);
       return false;
     }
-    
+
     // Write the data directly to the file
     await fs.promises.writeFile(filePath, jsonString, { encoding: 'utf8', flag: 'w' });
     return true;
@@ -114,7 +112,7 @@ async function safeDeleteJSON(filePath) {
       } catch (backupError) {
         console.warn(`Failed to create backup before deletion: ${filePath}`, backupError);
       }
-      
+
       await fs.promises.unlink(filePath);
       return true;
     }
@@ -163,11 +161,11 @@ function validateArrayData(data) {
   return Array.isArray(data);
 }
 
-module.exports = {
+export {
   safeReadJSON,
   safeWriteJSON,
   safeDeleteJSON,
   backupJSONFile,
   validateArrayData,
   validateJSONData
-}; 
+};
