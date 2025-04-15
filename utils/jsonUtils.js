@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { debug, info, warn, error } from './debugUtils.js';
 
 /**
  * Safely reads and parses a JSON file with comprehensive error handling
@@ -8,51 +9,71 @@ import path from 'path';
  * @returns {Promise<any>} - Parsed JSON data or default value
  */
 async function safeReadJSON(filePath, defaultValue = {}) {
+  const category = 'JsonUtils';
+  debug(category, `Reading JSON file: ${filePath}`);
+
   try {
     if (!fs.existsSync(filePath)) {
-      console.log(`File doesn't exist, will use default value: ${filePath}`);
+      info(category, `File doesn't exist, will use default value: ${filePath}`);
       return defaultValue;
     }
 
+    debug(category, `File exists, reading content: ${filePath}`);
     const data = await fs.promises.readFile(filePath, 'utf8');
+
     if (!data || data.trim() === '') {
-      console.warn(`Empty file found: ${filePath}, will use default value`);
+      warn(category, `Empty file found: ${filePath}, will use default value`);
       return defaultValue;
     }
+
+    debug(category, `File content length: ${data.length} bytes`);
 
     try {
+      debug(category, `Attempting to parse JSON from: ${filePath}`);
       const parsed = JSON.parse(data);
+
+      // Log the structure of the parsed data
+      if (Array.isArray(parsed)) {
+        debug(category, `Successfully parsed JSON array with ${parsed.length} items`);
+        if (parsed.length > 0) {
+          debug(category, `First item sample:`, parsed[0]);
+        }
+      } else {
+        debug(category, `Successfully parsed JSON object with ${Object.keys(parsed).length} keys`);
+      }
+
       return parsed;
     } catch (parseError) {
-      console.error(`Error parsing JSON from ${filePath}:`, parseError);
+      error(category, `Error parsing JSON from ${filePath}:`, parseError);
+      error(category, `Raw data that failed to parse (first 100 chars): ${data.substring(0, 100)}...`);
 
       // Create backup of corrupted file
       try {
         const backupPath = `${filePath}.corrupt-${Date.now()}`;
         await fs.promises.writeFile(backupPath, data);
-        console.log(`Created backup of corrupted file at ${backupPath}`);
+        info(category, `Created backup of corrupted file at ${backupPath}`);
       } catch (backupError) {
-        console.error(`Failed to create backup of corrupted file:`, backupError);
+        error(category, `Failed to create backup of corrupted file:`, backupError);
       }
 
       // Try to delete and recreate the file
       try {
         await fs.promises.unlink(filePath);
         await fs.promises.writeFile(filePath, JSON.stringify(defaultValue, null, 2));
-        console.log(`Recreated ${filePath} with default values`);
+        info(category, `Recreated ${filePath} with default values`);
       } catch (recreateError) {
-        console.error(`Failed to recreate ${filePath}:`, recreateError);
+        error(category, `Failed to recreate ${filePath}:`, recreateError);
       }
 
       return defaultValue;
     }
   } catch (error) {
-    console.error(`Error accessing ${filePath}:`, error);
+    error(category, `Error accessing ${filePath}:`, error);
     try {
       await fs.promises.writeFile(filePath, JSON.stringify(defaultValue, null, 2));
-      console.log(`Created new file at ${filePath} with default values after access error`);
+      info(category, `Created new file at ${filePath} with default values after access error`);
     } catch (writeError) {
-      console.error(`Failed to create new file after access error:`, writeError);
+      error(category, `Failed to create new file after access error:`, writeError);
     }
     return defaultValue;
   }
@@ -65,33 +86,54 @@ async function safeReadJSON(filePath, defaultValue = {}) {
  * @returns {Promise<boolean>} - Success status
  */
 async function safeWriteJSON(filePath, data) {
+  const category = 'JsonUtils';
+  debug(category, `Writing JSON to file: ${filePath}`);
+
   try {
     // Create a backup of the existing file if it exists
     if (fs.existsSync(filePath)) {
       try {
         const backupPath = `${filePath}.backup-${Date.now()}`;
         await fs.promises.copyFile(filePath, backupPath);
+        debug(category, `Created backup before write: ${backupPath}`);
       } catch (backupError) {
-        console.warn(`Failed to create backup before write: ${filePath}`, backupError);
+        warn(category, `Failed to create backup before write: ${filePath}`, backupError);
       }
     }
 
+    // Log data structure before writing
+    if (Array.isArray(data)) {
+      debug(category, `Writing JSON array with ${data.length} items`);
+      if (data.length > 0) {
+        debug(category, `First item sample:`, data[0]);
+      }
+    } else {
+      debug(category, `Writing JSON object with ${Object.keys(data).length} keys`);
+    }
+
     // Write data directly to a string first to validate it
+    debug(category, `Stringifying data for validation`);
     const jsonString = JSON.stringify(data, null, 2);
+    debug(category, `Stringified data length: ${jsonString.length} bytes`);
 
     // Validate the JSON
     try {
+      debug(category, `Validating JSON string`);
       JSON.parse(jsonString);
+      debug(category, `JSON validation successful`);
     } catch (validateError) {
-      console.error(`Attempted to write invalid JSON to ${filePath}`, validateError);
+      error(category, `Attempted to write invalid JSON to ${filePath}`, validateError);
+      error(category, `Invalid data:`, data);
       return false;
     }
 
     // Write the data directly to the file
+    debug(category, `Writing validated JSON to file: ${filePath}`);
     await fs.promises.writeFile(filePath, jsonString, { encoding: 'utf8', flag: 'w' });
+    info(category, `Successfully wrote JSON to file: ${filePath}`);
     return true;
-  } catch (error) {
-    console.error(`Error writing to ${filePath}:`, error);
+  } catch (err) {
+    error(category, `Error writing to ${filePath}:`, err);
     return false;
   }
 }
@@ -149,7 +191,8 @@ async function backupJSONFile(filePath, reason = 'backup') {
  * @returns {boolean} - True if data is valid JSON, false otherwise
  */
 function validateJSONData(data) {
-  return data !== null && (typeof data === 'object' || Array.isArray(data));
+  // null is a valid JSON value
+  return data === null || (typeof data === 'object' || Array.isArray(data));
 }
 
 /**

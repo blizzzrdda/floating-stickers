@@ -3,6 +3,15 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import StickerDataManager from './utils/stickerUtils.js';
+import { debug, info, warn, error, setDebugEnabled, setLogLevel } from './utils/debugUtils.js';
+
+// Enable debug mode during development
+if (!app.isPackaged) {
+  setDebugEnabled(true);
+  setLogLevel('DEBUG');
+  process.env.DEBUG_STICKER = 'true';
+  info('App', 'Debug mode enabled for development');
+}
 
 // Get the directory name of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -417,6 +426,9 @@ function createStickerWindow(stickerData = null) {
 
   // When the window is ready to show
   stickerWindow.once('ready-to-show', () => {
+    const category = 'App';
+    debug(category, `Sticker window ready to show: ID=${stickerId}`);
+
     // Prepare data to send to the sticker window
     const dataToSend = {
       id: stickerId,
@@ -428,14 +440,24 @@ function createStickerWindow(stickerData = null) {
       }
     };
 
+    // Log the data being sent to the sticker window
+    debug(category, `Sending data to sticker window ID=${stickerId}:`, {
+      id: dataToSend.id,
+      contentLength: dataToSend.content ? dataToSend.content.length : 0,
+      position: dataToSend.position,
+      size: dataToSend.size
+    });
+
     // Send the data to the sticker window
     stickerWindow.webContents.send('sticker-data', dataToSend);
 
     // Show the window
+    debug(category, `Showing sticker window ID=${stickerId}`);
     stickerWindow.show();
 
     // Auto-align stickers if this is a new sticker (not being restored from saved data)
     if (!stickerData || !stickerData.id) {
+      debug(category, 'New sticker created, will auto-align after 100ms');
       // Small delay to ensure the window is fully rendered before alignment
       setTimeout(() => realignStickers(), 100);
     }
@@ -482,6 +504,22 @@ function createStickerWindow(stickerData = null) {
   return stickerId;
 }
 
+// Import environment utilities
+import { isDevelopment } from './utils/environment.js';
+
+// Conditionally import test loader in development mode
+let testLoader = null;
+if (isDevelopment()) {
+  import('./test-loader.js')
+    .then(module => {
+      testLoader = module.default;
+      info('App', 'Test loader initialized in development mode');
+    })
+    .catch(err => {
+      error('App', 'Failed to initialize test loader:', err);
+    });
+}
+
 // When Electron has finished initialization
 app.whenReady().then(async () => {
   createWindow();
@@ -505,6 +543,15 @@ app.whenReady().then(async () => {
     realignStickers();
   });
 
+  // Run tests in development mode
+  if (isDevelopment() && testLoader) {
+    info('App', 'Running tests in development mode');
+    // Load and run tests after a delay to ensure app is fully initialized
+    setTimeout(() => {
+      testLoader.runTests();
+    }, 1000);
+  }
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -512,48 +559,66 @@ app.whenReady().then(async () => {
 
 // Load stickers from file and create sticker windows
 async function loadSavedStickers() {
-  try {
-    console.log('Loading stickers data...');
+  const category = 'App';
+  info(category, 'Loading stickers data...');
 
+  try {
     // Load the merged sticker data
+    debug(category, 'Calling stickerManager.loadStickerData()');
     const stickers = await stickerManager.loadStickerData();
 
     if (!Array.isArray(stickers)) {
-      console.error('Loaded sticker data is not an array, skipping window creation');
+      error(category, 'Loaded sticker data is not an array, skipping window creation');
       return;
     }
 
-    console.log(`Loading ${stickers.length} stickers`);
+    info(category, `Loading ${stickers.length} stickers`);
 
     // If no stickers found, don't do anything
     if (stickers.length === 0) {
-      console.log('No stickers found to load');
+      info(category, 'No stickers found to load');
       return;
     }
 
+    // Log details about each sticker for debugging
+    stickers.forEach((sticker, index) => {
+      if (sticker && sticker.id) {
+        const contentLength = sticker.content ? sticker.content.length : 0;
+        debug(category, `Sticker ${index}: ID=${sticker.id}, Content length=${contentLength}, ` +
+          `Position=(${sticker.position?.x || 0},${sticker.position?.y || 0}), ` +
+          `Size=(${sticker.size?.width || 250}x${sticker.size?.height || 80})`);
+      } else {
+        warn(category, `Invalid sticker at index ${index}:`, sticker);
+      }
+    });
+
     // Add a small delay to ensure the app is fully initialized before creating sticker windows
+    debug(category, 'Waiting 500ms before creating sticker windows...');
     await new Promise(resolve => setTimeout(resolve, 500));
 
     // Create windows for each sticker
     for (const sticker of stickers) {
       if (!sticker || !sticker.id) {
-        console.warn('Skipping invalid sticker data:', sticker);
+        warn(category, 'Skipping invalid sticker data:', sticker);
         continue;
       }
 
       try {
         // Create the sticker window
+        debug(category, `Creating window for sticker ID=${sticker.id}`);
         createStickerWindow(sticker);
 
         // Add a small delay between creating each sticker to prevent overwhelming the system
         await new Promise(resolve => setTimeout(resolve, 100));
       } catch (stickerError) {
-        console.error(`Error creating sticker window for sticker ${sticker.id}:`, stickerError);
+        error(category, `Error creating sticker window for sticker ${sticker.id}:`, stickerError);
         // Continue with next sticker
       }
     }
+
+    info(category, `Successfully created ${stickers.length} sticker windows`);
   } catch (error) {
-    console.error('Error loading stickers:', error);
+    error(category, 'Error loading stickers:', error);
     // Don't crash the app, just show an empty state
   }
 }

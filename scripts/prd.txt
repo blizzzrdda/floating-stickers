@@ -1,49 +1,66 @@
-# Product Requirements Document: Implementing OpenAI Whisper Speech-to-Text in Sticker Application
+# Product Requirements Document: Sticker Application Enhancement
 
 ## Overview
-The Sticker application is a Windows desktop application that allows users to create and manage floating stickers on their screen. We want to enhance this application by adding speech-to-text functionality using OpenAI's Whisper API, allowing users to create stickers by speaking rather than typing.
+The Sticker application is a Windows desktop application that allows users to create and manage floating stickers on their screen. This PRD outlines enhancements to fix text content loading issues, implement test automation, and improve code architecture documentation.
 
 ## Current State
 - The application is a Windows executable built with Electron
 - Users can create, edit, move, and resize stickers
 - Stickers persist between application restarts
 - The application has a system tray icon for management
-- OpenAI API key is already configured in the .env file
+- OpenAI Whisper is used for speech-to-text functionality
+- Text content is not consistently loading in stickers
+- The application lacks automated testing
 
 ## Requirements
 
-### 1. Speech-to-Text Integration
-- Implement OpenAI Whisper API integration for speech-to-text conversion
-- Add a microphone button to stickers for recording speech
-- Convert recorded speech to text and insert it into the sticker content
+### 1. Fix Text Content Loading Issue
+- Identify the root cause of text content not loading in stickers
+- Implement a robust solution to ensure text content is consistently loaded
+- Add error handling and logging to diagnose future issues
+- Ensure backward compatibility with existing sticker data files
 
-### 2. User Interface Updates
-- Add a microphone button to each sticker
-- Show recording status indicator when recording is active
-- Provide visual feedback during speech processing
+### 2. Test Automation Implementation
+- Create a test automation framework that runs during development (`npm start`)
+- Tests should not run in the packaged executable
+- Implement unit tests for critical components
+- Add integration tests for key user flows
+- Create a test runner that can be triggered during development
+- Tests should cover:
+  - Sticker creation and deletion
+  - Text content loading and saving
+  - Sticker positioning and resizing
+  - Speech-to-text functionality (using OpenAI Whisper)
 
-### 3. Audio Recording Functionality
-- Implement audio recording capability in the Electron application
-- Capture audio from the user's microphone
-- Convert audio to the format required by the Whisper API
+### 3. Code Refactoring
+- Refactor code to improve maintainability and readability
+- Ensure proper ES module usage throughout the application
+- Implement consistent error handling patterns
+- Improve separation of concerns between components
+- Optimize performance where possible
 
-### 4. API Integration
-- Use the existing OpenAI API key from the .env file
-- Send recorded audio to the Whisper API
-- Process the API response and update the sticker content
+### 4. Architecture Documentation
+- Create comprehensive architecture documentation in the docs folder
+- Document the application's component structure
+- Describe data flow and state management
+- Detail the file storage mechanism
+- Document the speech-to-text integration
+- Include diagrams for visual clarity
 
-### 5. Error Handling
+### 5. Speech-to-Text Integration (Existing Feature)
+- Maintain OpenAI Whisper API integration for speech-to-text conversion
+- Ensure the microphone button on stickers works correctly
+- Verify speech-to-text conversion is working properly
+
+### 6. Error Handling
 - Handle API errors gracefully
-- Provide user feedback when speech recognition fails
+- Provide user feedback when operations fail
 - Implement fallback mechanisms for offline scenarios
 
-### 6. Performance Considerations
-- Optimize audio recording for quality and file size
-- Implement efficient API communication
-- Ensure the application remains responsive during speech processing
-
 ## Success Criteria
-- Users can successfully create and update stickers using speech
-- The speech-to-text conversion is accurate and reliable
-- The feature is intuitive and easy to use
-- The application remains stable and performant with the new feature
+- Sticker text content loads reliably in all scenarios
+- Test suite runs automatically during development
+- Tests do not run in the packaged executable
+- Code is well-structured and follows best practices
+- Architecture documentation is comprehensive and clear
+- The application remains stable and performant

@@ -241,38 +241,92 @@
             }
         });
 
+        // Debug logging function
+        function debugLog(category, message, data = null) {
+            console.log(`[${category}] ${message}`, data !== null ? data : '');
+        }
+
         // Receive sticker data from main process
         window.stickerAPI.onStickerData(data => {
+            debugLog('Sticker', `Received sticker data: ID=${data.id}`);
+            debugLog('Sticker', `Content received: ${data.content ? 'Yes' : 'No'}, Length: ${data.content ? data.content.length : 0}`);
+            debugLog('Sticker', `Content preview: "${data.content ? data.content.substring(0, 30) : ''}${data.content && data.content.length > 30 ? '...' : ''}"`);
+
+            // Store the data
             stickerData = data;
+
             // Use textContent instead of innerHTML to ensure only plain text
+            debugLog('Sticker', 'Setting content.textContent with received data');
             content.textContent = data.content || '';
+            debugLog('Sticker', `Content element after setting: Length=${content.textContent.length}`);
 
             // Apply width and height directly
             if (data.size) {
+                debugLog('Sticker', `Setting size: ${data.size.width}x${data.size.height}`);
                 document.body.style.width = `${data.size.width}px`;
                 document.body.style.height = `${data.size.height}px`;
+                debugLog('Sticker', 'Adjusting height based on content');
                 adjustHeight(); // Still adjust height for content if needed
             }
 
             // If this is a new sticker (no content), focus the editor
             if (!data.content) {
+                debugLog('Sticker', 'New sticker detected, focusing editor');
                 content.focus();
             }
 
             // Ensure close button is visible after loading data
             if (closeBtn) {
+                debugLog('Sticker', 'Ensuring close button is visible');
                 closeBtn.style.display = 'flex';
                 closeBtn.style.visibility = 'visible';
                 closeBtn.style.opacity = '1';
             }
 
-            // Force a small delay to ensure UI is updated
+            // Implement a more robust content loading mechanism with multiple verification steps
+            debugLog('Sticker', 'Setting up content verification sequence');
+
+            // Store the original content for verification
+            const originalContent = data.content || '';
+
+            // First verification after a short delay
             setTimeout(() => {
                 if (closeBtn) {
+                    debugLog('Sticker', 'First timeout fired, ensuring close button is visible');
                     closeBtn.style.display = 'flex';
                     closeBtn.style.visibility = 'visible';
+                    closeBtn.style.opacity = '1';
                 }
-            }, 100);
+
+                // Verify content is still present
+                debugLog('Sticker', `First content verification: Length=${content.textContent.length}`);
+                if (originalContent && content.textContent !== originalContent) {
+                    debugLog('Sticker', 'WARNING: Content mismatch at first check, restoring');
+                    content.textContent = originalContent;
+                }
+            }, 50);
+
+            // Second verification after a longer delay
+            setTimeout(() => {
+                debugLog('Sticker', `Second content verification: Length=${content.textContent.length}`);
+                if (originalContent && content.textContent !== originalContent) {
+                    debugLog('Sticker', 'WARNING: Content mismatch at second check, restoring');
+                    content.textContent = originalContent;
+                }
+            }, 200);
+
+            // Final verification after the window should be fully rendered
+            setTimeout(() => {
+                debugLog('Sticker', `Final content verification: Length=${content.textContent.length}`);
+                if (originalContent && content.textContent !== originalContent) {
+                    debugLog('Sticker', 'WARNING: Content mismatch at final check, restoring');
+                    content.textContent = originalContent;
+
+                    // Force a save to ensure content is persisted
+                    stickerData.content = originalContent;
+                    saveSticker();
+                }
+            }, 500);
         });
 
         // Listen for position updates from the main process
@@ -384,14 +438,31 @@
         });
 
         content.addEventListener('blur', () => {
+            debugLog('Sticker', 'Content blur event fired');
+            debugLog('Sticker', `Current content element text length: ${content.textContent.length}`);
+
             // Store the plain text content only
+            const previousContent = stickerData.content;
             stickerData.content = content.textContent;
 
+            // Log content change
+            if (previousContent !== stickerData.content) {
+                debugLog('Sticker', `Content changed: ${previousContent ? previousContent.length : 0} chars -> ${stickerData.content ? stickerData.content.length : 0} chars`);
+            } else {
+                debugLog('Sticker', 'Content unchanged');
+            }
+
             // Update size based on precise measurements
+            const previousSize = {...stickerData.size};
             stickerData.size = {
                 width: parseInt(document.body.style.width),
                 height: parseInt(document.body.style.height)
             };
+
+            // Log size change
+            if (previousSize.width !== stickerData.size.width || previousSize.height !== stickerData.size.height) {
+                debugLog('Sticker', `Size changed: ${previousSize.width}x${previousSize.height} -> ${stickerData.size.width}x${stickerData.size.height}`);
+            }
 
             saveSticker();
         });
@@ -410,9 +481,20 @@
 
         // Save sticker data to main process
         function saveSticker() {
+            debugLog('Sticker', `Saving sticker: ID=${stickerData.id}`);
+            debugLog('Sticker', `Content being saved: Length=${stickerData.content ? stickerData.content.length : 0}`);
+            debugLog('Sticker', `Content preview: "${stickerData.content ? stickerData.content.substring(0, 30) : ''}${stickerData.content && stickerData.content.length > 30 ? '...' : ''}"`);
+
             window.stickerAPI.updateSticker(stickerData)
+                .then(result => {
+                    debugLog('Sticker', `Save result: ${result.success ? 'Success' : 'Failed'}`, result);
+
+                    if (!result.success) {
+                        debugLog('Sticker', 'WARNING: Failed to save sticker data', result.error);
+                    }
+                })
                 .catch(err => {
-                    console.error('Failed to update sticker:', err);
+                    debugLog('Sticker', 'ERROR: Failed to update sticker:', err);
                 });
         }
 

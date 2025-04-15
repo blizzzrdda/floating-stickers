@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { safeReadJSON, safeWriteJSON, backupJSONFile, validateJSONData, validateArrayData } from './jsonUtils.js';
+import { debug, info, warn, error } from './debugUtils.js';
 
 /**
  * Handles loading sticker layout and content data
@@ -39,16 +40,22 @@ class StickerDataManager {
    * @returns {Promise<Array>} Layout data array
    */
   async loadLayoutData() {
+    const category = 'StickerDataManager';
+    debug(category, `Loading layout data from ${this.layoutFilePath}`);
+
     try {
       const data = await safeReadJSON(this.layoutFilePath, []);
+
       if (!validateArrayData(data)) {
-        console.error('Layout data is not an array, resetting to default');
+        error(category, 'Layout data is not an array, resetting to default');
         await safeWriteJSON(this.layoutFilePath, []);
         return [];
       }
+
+      info(category, `Successfully loaded ${data.length} layout items`);
       return data;
     } catch (error) {
-      console.error('Failed to load layout data:', error);
+      error(category, 'Failed to load layout data:', error);
       return [];
     }
   }
@@ -58,16 +65,37 @@ class StickerDataManager {
    * @returns {Promise<Array>} Content data array
    */
   async loadContentData() {
+    const category = 'StickerDataManager';
+    debug(category, `Loading content data from ${this.contentFilePath}`);
+
     try {
       const data = await safeReadJSON(this.contentFilePath, []);
+
       if (!validateArrayData(data)) {
-        console.error('Content data is not an array, resetting to default');
+        error(category, 'Content data is not an array, resetting to default');
         await safeWriteJSON(this.contentFilePath, []);
         return [];
       }
+
+      // Log content data details
+      if (data.length > 0) {
+        debug(category, `Content data contains ${data.length} items`);
+        data.forEach((item, index) => {
+          if (item && item.id) {
+            const contentLength = item.content ? item.content.length : 0;
+            const contentPreview = item.content ? `${item.content.substring(0, 20)}${contentLength > 20 ? '...' : ''}` : '';
+            debug(category, `Content item ${index}: ID=${item.id}, Length=${contentLength}, Preview="${contentPreview}"`);
+          } else {
+            warn(category, `Invalid content item at index ${index}:`, item);
+          }
+        });
+      } else {
+        info(category, 'Content data is empty array');
+      }
+
       return data;
     } catch (error) {
-      console.error('Failed to load content data:', error);
+      error(category, 'Failed to load content data:', error);
       return [];
     }
   }
@@ -127,44 +155,73 @@ class StickerDataManager {
    * @returns {Promise<Array>} Combined sticker data array
    */
   async loadStickerData() {
+    const category = 'StickerDataManager';
+    debug(category, 'Loading sticker data');
+
     try {
       // Check if files exist before trying to load them
       const layoutExists = fs.existsSync(this.layoutFilePath);
       const contentExists = fs.existsSync(this.contentFilePath);
 
+      debug(category, `Layout file exists: ${layoutExists}, Content file exists: ${contentExists}`);
+      debug(category, `Layout path: ${this.layoutFilePath}`);
+      debug(category, `Content path: ${this.contentFilePath}`);
+
       // If neither file exists, return an empty array without writing anything
       if (!layoutExists && !contentExists) {
-        console.log('No sticker data files exist yet, returning empty array');
+        info(category, 'No sticker data files exist yet, returning empty array');
         return [];
       }
 
       // Load layout and content data
+      debug(category, 'Loading layout data...');
       const layoutData = await this.loadLayoutData();
+      debug(category, `Loaded ${layoutData.length} layout items`);
+
+      debug(category, 'Loading content data...');
       const contentData = await this.loadContentData();
+      debug(category, `Loaded ${contentData.length} content items`);
 
       // Create a map of content by ID for easy lookup
+      debug(category, 'Creating content map for lookup');
       const contentMap = new Map();
       contentData.forEach(item => {
         if (item && item.id) {
           contentMap.set(item.id, item.content);
+          debug(category, `Content for ID ${item.id}: ${item.content ? 'Present' : 'Empty'} (${item.content ? item.content.length : 0} chars)`);
+        } else {
+          warn(category, 'Found invalid content item without ID', item);
         }
       });
+      debug(category, `Content map contains ${contentMap.size} items`);
 
       // Merge the data
+      debug(category, 'Merging layout and content data');
       const mergedData = layoutData.map(layout => {
-        if (!layout || !layout.id) return null;
+        if (!layout || !layout.id) {
+          warn(category, 'Found invalid layout item without ID', layout);
+          return null;
+        }
+
+        const content = contentMap.get(layout.id);
+        debug(category, `Merging sticker ID ${layout.id}: Content ${content ? 'found' : 'not found'}`);
+
+        if (content === undefined) {
+          warn(category, `No content found for sticker ID ${layout.id}, using empty string`);
+        }
 
         return {
           id: layout.id,
-          content: contentMap.get(layout.id) || '',
+          content: content || '',
           position: layout.position || { x: 0, y: 0 },
           size: layout.size || { width: 250, height: 80 }
         };
       }).filter(item => item !== null);
 
+      info(category, `Successfully merged data, returning ${mergedData.length} stickers`);
       return mergedData;
     } catch (error) {
-      console.error('Failed to load sticker data:', error);
+      error(category, 'Failed to load sticker data:', error);
       return [];
     }
   }
