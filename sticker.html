@@ -9,13 +9,13 @@
             --sticker-bg: #ffffa5;
             --text-color: #333;
         }
-        
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             margin: 0;
             padding: 0;
@@ -24,7 +24,7 @@
             overflow: hidden;
             min-height: 80px; /* Header (40px) + single line of text (40px) */
         }
-        
+
         .sticker {
             flex: 1;
             background-color: var(--sticker-bg);
@@ -36,7 +36,7 @@
             height: 100%;
             width: 100%;
         }
-        
+
         .sticker-header {
             padding: 8px;
             display: flex;
@@ -46,11 +46,11 @@
             background-color: rgba(0, 0, 0, 0.05);
             -webkit-app-region: drag; /* Make this area draggable for window positioning */
         }
-        
+
         .sticker-header:active {
             cursor: grabbing;
         }
-        
+
         .sticker-close {
             background: none;
             border: none;
@@ -66,12 +66,12 @@
             -webkit-app-region: no-drag; /* Make button clickable */
             z-index: 10;
         }
-        
+
         .sticker-close:hover {
             background-color: rgba(0, 0, 0, 0.1);
             color: #333;
         }
-        
+
         .sticker-content {
             flex: 1;
             padding: 10px;
@@ -87,12 +87,12 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; /* Ensure consistent font */
             font-size: 14px; /* Set standard font size */
         }
-        
+
         .sticker-content[contenteditable="true"] {
             outline: none;
             border: 1px dashed rgba(0, 0, 0, 0.2);
         }
-        
+
         .sticker-content:empty::before {
             content: 'Type here...';
             color: #999;
@@ -108,20 +108,20 @@
         </div>
         <div class="sticker-content" contenteditable="true" spellcheck="false" data-plaintext-only="true"></div>
     </div>
-    
+
     <script>
         // Elements
         const sticker = document.querySelector('.sticker');
         const closeBtn = document.querySelector('.sticker-close');
         const content = document.querySelector('.sticker-content');
-        
+
         // Ensure elements are visible immediately
         if (closeBtn) {
             closeBtn.style.display = 'flex';
             closeBtn.style.visibility = 'visible';
             closeBtn.style.opacity = '1';
         }
-        
+
         // Sticker data
         let stickerData = {
             id: Date.now().toString(),
@@ -129,55 +129,55 @@
             position: { x: 0, y: 0 },
             size: { width: 250, height: 80 }
         };
-        
+
         // Set initial size explicitly to match default
         document.body.style.width = `${stickerData.size.width}px`;
         document.body.style.height = `${stickerData.size.height}px`;
-        
+
         // Auto-focus on content area when page loads for new stickers
         window.addEventListener('DOMContentLoaded', () => {
             // Focus the content area
             content.focus();
-            
+
             // Place cursor at the end of any existing content
             if (content.innerHTML) {
                 // Create a range at the end of the content
                 const range = document.createRange();
                 range.selectNodeContents(content);
                 range.collapse(false); // collapse to end
-                
+
                 // Apply the range selection
                 const selection = window.getSelection();
                 selection.removeAllRanges();
                 selection.addRange(range);
             }
         });
-        
+
         // Receive sticker data from main process
         window.stickerAPI.onStickerData(data => {
             stickerData = data;
             // Use textContent instead of innerHTML to ensure only plain text
             content.textContent = data.content || '';
-            
+
             // Apply width and height directly
             if (data.size) {
                 document.body.style.width = `${data.size.width}px`;
                 document.body.style.height = `${data.size.height}px`;
                 adjustHeight(); // Still adjust height for content if needed
             }
-            
+
             // If this is a new sticker (no content), focus the editor
             if (!data.content) {
                 content.focus();
             }
-            
+
             // Ensure close button is visible after loading data
             if (closeBtn) {
                 closeBtn.style.display = 'flex';
                 closeBtn.style.visibility = 'visible';
                 closeBtn.style.opacity = '1';
             }
-            
+
             // Force a small delay to ensure UI is updated
             setTimeout(() => {
                 if (closeBtn) {
@@ -186,7 +186,7 @@
                 }
             }, 100);
         });
-        
+
         // Listen for position updates from the main process
         window.stickerAPI.onPositionUpdated(position => {
             if (position && position.x !== undefined && position.y !== undefined) {
@@ -194,7 +194,17 @@
                 saveSticker(); // Save the updated position
             }
         });
-        
+
+        // Listen for size updates from the main process
+        window.stickerAPI.onSizeUpdated(size => {
+            if (size && size.width !== undefined && size.height !== undefined) {
+                stickerData.size = size;
+                document.body.style.width = `${size.width}px`;
+                document.body.style.height = `${size.height}px`;
+                saveSticker(); // Save the updated size
+            }
+        });
+
         // Function to adjust height based on content
         function adjustHeight() {
             // If no content, use minimum height
@@ -205,7 +215,7 @@
                 window.resizeTo(parseInt(document.body.style.width), minHeight);
                 return;
             }
-            
+
             // Create a temporary clone to measure accurate line height
             const clone = content.cloneNode(true);
             clone.style.position = 'absolute';
@@ -214,30 +224,30 @@
             clone.style.height = 'auto';
             clone.style.whiteSpace = 'pre-wrap';
             document.body.appendChild(clone);
-            
+
             // Calculate lines of text
             const lineHeight = parseInt(window.getComputedStyle(content).lineHeight) || 20;
-            
+
             // Get actual rendered height of content
             const actualHeight = clone.clientHeight;
-            
-            // Calculate appropriate height based on actual content 
+
+            // Calculate appropriate height based on actual content
             const headerHeight = 36; // Header height
             const contentPadding = 20; // Content padding (10px top + 10px bottom)
             const extraPadding = 2; // Extra space to prevent cutting off text
-            
+
             // Calculate the total height needed
             const newHeight = headerHeight + actualHeight + contentPadding + extraPadding;
-            
+
             // Remove the clone
             document.body.removeChild(clone);
-            
+
             // Set the height
             document.body.style.height = `${newHeight}px`;
             stickerData.size.height = newHeight;
             window.resizeTo(parseInt(document.body.style.width), newHeight);
         }
-        
+
         // Close button click
         closeBtn.addEventListener('click', () => {
             window.stickerAPI.removeSticker(stickerData.id)
@@ -248,68 +258,68 @@
                     console.error('Failed to remove sticker:', err);
                 });
         });
-        
+
         // Content change
         content.addEventListener('input', () => {
             // Sanitize content to ensure only plain text
             sanitizeContent();
-            
+
             // Use a small delay to allow the browser to render the content
             setTimeout(adjustHeight, 0);
         });
-        
+
         // Function to sanitize content and ensure only plain text
         function sanitizeContent() {
             if (content.innerHTML !== content.textContent) {
                 const plainText = content.textContent;
                 content.textContent = plainText;
-                
+
                 // Restore cursor position at the end
                 const range = document.createRange();
                 range.selectNodeContents(content);
                 range.collapse(false); // collapse to end
-                
+
                 const selection = window.getSelection();
                 selection.removeAllRanges();
                 selection.addRange(range);
             }
         }
-        
+
         // Prevent formatting keyboard shortcuts
         content.addEventListener('keydown', (event) => {
             // Prevent common formatting shortcuts (Ctrl+B, Ctrl+I, Ctrl+U, etc.)
-            if ((event.ctrlKey || event.metaKey) && 
+            if ((event.ctrlKey || event.metaKey) &&
                 ['b', 'i', 'u', 'e', 'h', 'k', 'j', '1', '2', '3', '4', '5', '6'].includes(event.key.toLowerCase())) {
                 event.preventDefault();
                 return false;
             }
         });
-        
+
         content.addEventListener('blur', () => {
             // Store the plain text content only
             stickerData.content = content.textContent;
-            
+
             // Update size based on precise measurements
             stickerData.size = {
                 width: parseInt(document.body.style.width),
                 height: parseInt(document.body.style.height)
             };
-            
+
             saveSticker();
         });
-        
+
         // Prevent pasting formatted content
         content.addEventListener('paste', (event) => {
             // Prevent the default paste
             event.preventDefault();
-            
+
             // Get plain text from clipboard
             const plainText = event.clipboardData.getData('text/plain');
-            
+
             // Insert text at cursor position
             document.execCommand('insertText', false, plainText);
         });
-        
+
         // Save sticker data to main process
         function saveSticker() {
             window.stickerAPI.updateSticker(stickerData)
@@ -317,13 +327,15 @@
                     console.error('Failed to update sticker:', err);
                 });
         }
-        
+
         // Handle window resize for sticker size
+        // Note: This is a fallback. The main process also tracks resize events
+        // and sends them via IPC for more reliable cross-platform behavior
         function handleWindowResize() {
             // Set body size to match window
             document.body.style.width = `${window.innerWidth}px`;
             document.body.style.height = `${window.innerHeight}px`;
-            
+
             // Update size data with exact values
             stickerData.size = {
                 width: window.innerWidth,
@@ -331,26 +343,16 @@
             };
             saveSticker();
         }
-        
+
         // Delay resize event to avoid too many updates
         let resizeTimeout;
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(handleWindowResize, 300);
         });
-        
-        // Handle window move to track position
-        let moveTimeout;
-        window.addEventListener('move', () => {
-            clearTimeout(moveTimeout);
-            moveTimeout = setTimeout(() => {
-                // We can't directly get window position, so we'll update it via IPC
-                // This gets updated when windows are manually moved
-                const pos = window.screenLeft !== undefined ? { x: window.screenLeft, y: window.screenTop } : { x: 0, y: 0 };
-                stickerData.position = pos;
-                saveSticker();
-            }, 100); // Reduced delay for more responsive position tracking
-        });
+
+        // Position tracking is handled by the main process through the 'moved' event
+        // and communicated via the 'position-updated' IPC event
     </script>
 </body>
-</html> 
+</html>
