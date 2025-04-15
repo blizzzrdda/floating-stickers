@@ -4,6 +4,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import StickerDataManager from './utils/stickerUtils.js';
 import { debug, info, warn, error, setDebugEnabled, setLogLevel } from './utils/debugUtils.js';
+import { performanceMonitor } from './utils/performanceMonitor.js';
 
 // Enable debug mode during development
 if (!app.isPackaged) {
@@ -27,6 +28,7 @@ const stickerManager = new StickerDataManager(userDataPath);
 // These services are initialized dynamically
 let whisperService;
 let preferencesService;
+let audioRecordingService;
 
 // We need to import the services after the app is ready
 // because they use ES modules and require the app to be initialized
@@ -426,8 +428,7 @@ function createStickerWindow(stickerData = null) {
 
   // When the window is ready to show
   stickerWindow.once('ready-to-show', () => {
-    const category = 'App';
-    debug(category, `Sticker window ready to show: ID=${stickerId}`);
+    console.debug(`Sticker window ready to show: ID=${stickerId}`);
 
     // Prepare data to send to the sticker window
     const dataToSend = {
@@ -441,9 +442,9 @@ function createStickerWindow(stickerData = null) {
     };
 
     // Log the data being sent to the sticker window
-    debug(category, `Sending data to sticker window ID=${stickerId}:`, {
+    console.debug(`Sending data to sticker window ID=${stickerId}:`, {
       id: dataToSend.id,
-      contentLength: dataToSend.content ? dataToSend.content.length : 0,
+      contentLength: dataToSend.content ? dataToSend.content : 'n/a',
       position: dataToSend.position,
       size: dataToSend.size
     });
@@ -452,12 +453,12 @@ function createStickerWindow(stickerData = null) {
     stickerWindow.webContents.send('sticker-data', dataToSend);
 
     // Show the window
-    debug(category, `Showing sticker window ID=${stickerId}`);
+    console.debug(`Showing sticker window ID=${stickerId}`);
     stickerWindow.show();
 
     // Auto-align stickers if this is a new sticker (not being restored from saved data)
     if (!stickerData || !stickerData.id) {
-      debug(category, 'New sticker created, will auto-align after 100ms');
+      console.debug('New sticker created, will auto-align after 100ms');
       // Small delay to ensure the window is fully rendered before alignment
       setTimeout(() => realignStickers(), 100);
     }
@@ -557,26 +558,42 @@ app.whenReady().then(async () => {
   });
 });
 
+// Use performance monitoring for sticker loading
+
 // Load stickers from file and create sticker windows
 async function loadSavedStickers() {
-  const category = 'App';
-  info(category, 'Loading stickers data...');
+  console.log('Loading stickers data...');
+
+  // Start performance monitoring
+  performanceMonitor.mark('loadSavedStickers-start');
 
   try {
+    // Check if sticker data files exist
+    const layoutPath = stickerManager.layoutFilePath;
+    const contentPath = stickerManager.contentFilePath;
+    const layoutExists = fs.existsSync(layoutPath);
+    const contentExists = fs.existsSync(contentPath);
+
+    console.log(`Sticker data files: layout=${layoutExists ? 'exists' : 'missing'}, content=${contentExists ? 'exists' : 'missing'}`);
+    console.log(`Layout path: ${layoutPath}`);
+    console.log(`Content path: ${contentPath}`);
+
     // Load the merged sticker data
-    debug(category, 'Calling stickerManager.loadStickerData()');
-    const stickers = await stickerManager.loadStickerData();
+    console.log('Calling stickerManager.loadStickerData()');
+    performanceMonitor.mark('loadStickerData-start');
+    const stickers = await stickerManager.loadStickerData({ showErrors: true });
+    performanceMonitor.measure('loadStickerData', 'loadStickerData-start');
 
     if (!Array.isArray(stickers)) {
-      error(category, 'Loaded sticker data is not an array, skipping window creation');
+      console.error('Loaded sticker data is not an array, skipping window creation');
       return;
     }
 
-    info(category, `Loading ${stickers.length} stickers`);
+    console.info(`Loading ${stickers.length} stickers`);
 
     // If no stickers found, don't do anything
     if (stickers.length === 0) {
-      info(category, 'No stickers found to load');
+      console.info('No stickers found to load');
       return;
     }
 
@@ -584,46 +601,63 @@ async function loadSavedStickers() {
     stickers.forEach((sticker, index) => {
       if (sticker && sticker.id) {
         const contentLength = sticker.content ? sticker.content.length : 0;
-        debug(category, `Sticker ${index}: ID=${sticker.id}, Content length=${contentLength}, ` +
+        console.debug(`Sticker ${index}: ID=${sticker.id}, Content length=${contentLength}, ` +
           `Position=(${sticker.position?.x || 0},${sticker.position?.y || 0}), ` +
           `Size=(${sticker.size?.width || 250}x${sticker.size?.height || 80})`);
       } else {
-        warn(category, `Invalid sticker at index ${index}:`, sticker);
+        console.warn(`Invalid sticker at index ${index}:`, sticker);
       }
     });
 
     // Add a small delay to ensure the app is fully initialized before creating sticker windows
-    debug(category, 'Waiting 500ms before creating sticker windows...');
+    console.debug('Waiting 500ms before creating sticker windows...');
     await new Promise(resolve => setTimeout(resolve, 500));
 
     // Create windows for each sticker
-    for (const sticker of stickers) {
+    performanceMonitor.mark('createStickerWindows-start');
+
+    // Use a more efficient approach for creating multiple stickers
+    const createStickersSequentially = async (stickers, index = 0) => {
+      if (index >= stickers.length) {
+        performanceMonitor.measure('createStickerWindows', 'createStickerWindows-start');
+        return;
+      }
+
+      const sticker = stickers[index];
+
       if (!sticker || !sticker.id) {
-        warn(category, 'Skipping invalid sticker data:', sticker);
-        continue;
+        console.warn('Skipping invalid sticker data:', sticker);
+        // Continue with next sticker
+        return createStickersSequentially(stickers, index + 1);
       }
 
       try {
         // Create the sticker window
-        debug(category, `Creating window for sticker ID=${sticker.id}`);
+        console.log(`Creating window for sticker ID=${sticker.id} (${index + 1}/${stickers.length})`);
+        performanceMonitor.mark(`createSticker-${sticker.id}-start`);
         createStickerWindow(sticker);
+        performanceMonitor.measure(`createSticker-${sticker.id}`, `createSticker-${sticker.id}-start`);
 
         // Add a small delay between creating each sticker to prevent overwhelming the system
-        await new Promise(resolve => setTimeout(resolve, 100));
+        // Use a shorter delay for better performance
+        await new Promise(resolve => setTimeout(resolve, 50));
       } catch (stickerError) {
-        error(category, `Error creating sticker window for sticker ${sticker.id}:`, stickerError);
-        // Continue with next sticker
+        console.error(`Error creating sticker window for sticker ${sticker.id}:`, stickerError);
       }
-    }
 
-    info(category, `Successfully created ${stickers.length} sticker windows`);
+      // Continue with next sticker
+      return createStickersSequentially(stickers, index + 1);
+    };
+
+    // Start creating stickers
+    await createStickersSequentially(stickers);
+
+    console.info(`Successfully created ${stickers.length} sticker windows`);
   } catch (error) {
-    error(category, 'Error loading stickers:', error);
+    console.error('Error loading stickers:', error);
     // Don't crash the app, just show an empty state
   }
 }
-
-// Note: HTML stripping is handled by the stickerManager
 
 // Toggle visibility of all stickers
 function toggleStickersVisibility() {
@@ -653,38 +687,121 @@ function toggleStickersVisibility() {
 app.on('before-quit', async () => {
   app.isQuitting = true;
 
-  // Save all sticker positions before quitting
+  console.log('[DEBUG] App is quitting, saving sticker data...');
+  console.log(`[DEBUG] User data path: ${app.getPath('userData')}`);
+  console.log(`[DEBUG] Layout file path: ${stickerManager.layoutFilePath}`);
+  console.log(`[DEBUG] Content file path: ${stickerManager.contentFilePath}`);
+
+  // Save all sticker data before quitting
   try {
+    // Ensure the user data directory exists
+    const userDataPath = app.getPath('userData');
+    if (!fs.existsSync(userDataPath)) {
+      console.log(`Creating user data directory: ${userDataPath}`);
+      await fs.promises.mkdir(userDataPath, { recursive: true });
+    }
+
     // Collect all sticker data
     const stickersToSave = [];
+    const contentPromises = [];
 
+    // First, request content from all sticker windows
+    console.log(`[DEBUG] Requesting content from ${stickerWindows.size} sticker windows`);
     for (const [stickerId, stickerWindow] of stickerWindows.entries()) {
       if (stickerWindow && !stickerWindow.isDestroyed()) {
+        console.log(`[DEBUG] Processing sticker ID=${stickerId}`);
         // Get current position and size
         const [x, y] = stickerWindow.getPosition();
         const [width, height] = stickerWindow.getSize();
+        console.log(`[DEBUG] Sticker position: (${x}, ${y}), size: ${width}x${height}`);
 
-        // Add to save list
-        stickersToSave.push({
-          id: stickerId,
-          position: { x, y },
-          size: { width, height },
-          content: '' // Content is managed by the renderer process
+        // Create a promise to get content from this sticker
+        const contentPromise = new Promise(resolve => {
+          console.log(`[DEBUG] Sending get-content request to sticker ID=${stickerId}`);
+          // Request content from the renderer process
+          stickerWindow.webContents.send('get-content');
+
+          // Set up a one-time listener for the response
+          ipcMain.once(`content-response-${stickerId}`, (_, content) => {
+            console.log(`[DEBUG] Received content response from sticker ID=${stickerId}, content length: ${content ? content.length : 0}`);
+            if (content && content.length > 0) {
+              console.log(`[DEBUG] Content preview: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
+            }
+            resolve({
+              id: stickerId,
+              position: { x, y },
+              size: { width, height },
+              content: content || ''
+            });
+          });
+
+          // Set a timeout in case the renderer doesn't respond
+          setTimeout(() => {
+            console.log(`[DEBUG] Timeout waiting for content from sticker ID=${stickerId}`);
+            resolve({
+              id: stickerId,
+              position: { x, y },
+              size: { width, height },
+              content: ''
+            });
+          }, 1000); // 1000ms timeout (increased from 500ms)
         });
+
+        contentPromises.push(contentPromise);
       }
+    }
+
+    // Wait for all content to be collected
+    if (contentPromises.length > 0) {
+      console.log(`Collecting content from ${contentPromises.length} stickers before quitting`);
+      const results = await Promise.all(contentPromises);
+      stickersToSave.push(...results);
     }
 
     // Only save if we have stickers
     if (stickersToSave.length > 0) {
-      console.log(`Saving positions for ${stickersToSave.length} stickers before quitting`);
-      await stickerManager.saveLayoutData(stickersToSave.map(s => ({
+      console.log(`Saving data for ${stickersToSave.length} stickers before quitting`);
+
+      // Log the sticker data for debugging
+      stickersToSave.forEach((sticker, index) => {
+        console.log(`Sticker ${index + 1}/${stickersToSave.length}: ID=${sticker.id}, Content length=${sticker.content ? sticker.content.length : 0}`);
+      });
+
+      // Save both layout and content data
+      const layoutData = stickersToSave.map(s => ({
         id: s.id,
         position: s.position,
         size: s.size
-      })));
+      }));
+
+      const contentData = stickersToSave.map(s => ({
+        id: s.id,
+        content: s.content || ''
+      }));
+
+      console.log(`Layout data: ${layoutData.length} items`);
+      console.log(`Content data: ${contentData.length} items`);
+      console.log(`Layout file path: ${stickerManager.layoutFilePath}`);
+      console.log(`Content file path: ${stickerManager.contentFilePath}`);
+
+      // Save both files
+      try {
+        const layoutSaved = await stickerManager.saveLayoutData(layoutData);
+        const contentSaved = await stickerManager.saveContentData(contentData);
+
+        console.log(`Save results: layout=${layoutSaved}, content=${contentSaved}`);
+
+        if (!layoutSaved || !contentSaved) {
+          console.error('Failed to save sticker data before quitting');
+        }
+      } catch (saveError) {
+        console.error('Error during save operation:', saveError);
+      }
+    } else {
+      console.log('No stickers to save before quitting');
     }
   } catch (error) {
-    console.error('Error saving sticker positions before quit:', error);
+    console.error('Error saving sticker data before quit:', error);
   }
 
   // Unregister all shortcuts
@@ -753,18 +870,81 @@ ipcMain.handle('load-stickers', async () => {
 
 // IPC for creating a new sticker
 ipcMain.handle('create-sticker', async (_, stickerData) => {
-  const stickerId = createStickerWindow(stickerData);
-  return { success: true, id: stickerId };
+  console.log('[DEBUG] Creating new sticker with data:', stickerData ? { id: stickerData.id } : 'undefined');
+
+  // Log content details if available
+  if (stickerData && stickerData.content) {
+    console.log(`[DEBUG] Initial content: length=${stickerData.content.length}`);
+    if (stickerData.content.length > 0) {
+      console.log(`[DEBUG] Content preview: "${stickerData.content.substring(0, 50)}${stickerData.content.length > 50 ? '...' : ''}"`);
+    }
+  }
+
+  try {
+    // Create the sticker window
+    console.log(`[DEBUG] Calling createStickerWindow`);
+    const stickerId = createStickerWindow(stickerData);
+    console.log(`[DEBUG] Created sticker with ID=${stickerId}`);
+
+    // Save the sticker data immediately to ensure it's persisted
+    if (stickerData) {
+      const sanitizedData = {
+        id: stickerId,
+        content: stickerData.content || '',
+        position: stickerData.position || { x: 0, y: 0 },
+        size: stickerData.size || { width: 250, height: 80 }
+      };
+
+      // Save the sticker data
+      console.log(`[DEBUG] Saving new sticker data for ID=${stickerId}`);
+      console.log(`[DEBUG] Sanitized data:`, {
+        id: sanitizedData.id,
+        content: sanitizedData.content ? `${sanitizedData.content.substring(0, 20)}... (${sanitizedData.content.length} chars)` : '(empty)',
+        position: sanitizedData.position,
+        size: sanitizedData.size
+      });
+
+      const result = await stickerManager.updateSticker(sanitizedData);
+      console.log(`[DEBUG] Save result:`, result);
+
+      if (!result.success) {
+        console.error(`[ERROR] Failed to save new sticker data:`, result.error);
+      }
+    }
+
+    return { success: true, id: stickerId };
+  } catch (error) {
+    console.error('[ERROR] Error creating new sticker:', error);
+    return { success: false, error: error.message };
+  }
 });
 
-// IPC for updating sticker position
+// IPC for updating sticker position and content
 ipcMain.handle('update-sticker', async (_, stickerData) => {
+  console.log(`[DEBUG] update-sticker IPC called for sticker ID=${stickerData?.id}`);
+
   try {
+    // Validate sticker data
+    if (!stickerData || typeof stickerData !== 'object') {
+      console.error(`[ERROR] Invalid sticker data provided to update-sticker:`, stickerData);
+      return { success: false, error: 'Invalid sticker data provided' };
+    }
+
+    // Log content details
+    if (stickerData.content !== undefined) {
+      console.log(`[DEBUG] Content to update: length=${stickerData.content ? stickerData.content.length : 0}`);
+      if (stickerData.content && stickerData.content.length > 0) {
+        console.log(`[DEBUG] Content preview: "${stickerData.content.substring(0, 50)}${stickerData.content.length > 50 ? '...' : ''}"`);
+      }
+    }
+
     // Use the sticker manager to update the sticker
+    console.log(`[DEBUG] Calling stickerManager.updateSticker`);
     const result = await stickerManager.updateSticker(stickerData);
+    console.log(`[DEBUG] updateSticker result:`, result);
     return result;
   } catch (error) {
-    console.error('Error updating sticker:', error);
+    console.error('[ERROR] Error updating sticker:', error);
     return { success: false, error: error.message };
   }
 });
@@ -815,6 +995,9 @@ ipcMain.handle('realign-stickers', () => {
 
 // Function to realign stickers in a vertical-first layout with multi-screen support
 function realignStickers() {
+  // Start performance monitoring
+  performanceMonitor.mark('realignStickers-start');
+
   const GRID_SIZE = 20;
   const BOTTOM_MARGIN = 200; // Space to leave at the bottom of the screen
 
@@ -826,15 +1009,28 @@ function realignStickers() {
     win && !win.isDestroyed()
   );
 
-  if (validStickers.length === 0) return; // No stickers to align
+  if (validStickers.length === 0) {
+    performanceMonitor.measure('realignStickers-empty', 'realignStickers-start');
+    return; // No stickers to align
+  }
 
   // Group stickers by the display they're currently on
+  performanceMonitor.mark('groupStickersByDisplay-start');
   const stickersByDisplay = groupStickersByDisplay(validStickers, displays);
+  performanceMonitor.measure('groupStickersByDisplay', 'groupStickersByDisplay-start');
 
   // Process and align stickers on each display
+  performanceMonitor.mark('alignStickers-start');
   displays.forEach(display => {
-    alignStickersOnDisplay(display, stickersByDisplay[display.id] || [], GRID_SIZE, BOTTOM_MARGIN);
+    const stickersForDisplay = stickersByDisplay[display.id] || [];
+    if (stickersForDisplay.length > 0) {
+      alignStickersOnDisplay(display, stickersForDisplay, GRID_SIZE, BOTTOM_MARGIN);
+    }
   });
+  performanceMonitor.measure('alignStickers', 'alignStickers-start');
+
+  // Complete performance measurement
+  performanceMonitor.measure('realignStickers-total', 'realignStickers-start');
 }
 
 // Helper: Group stickers by the display they're on
@@ -871,40 +1067,51 @@ function groupStickersByDisplay(stickers, displays) {
 function alignStickersOnDisplay(display, stickers, gridSize, bottomMargin) {
   if (stickers.length === 0) return;
 
+  performanceMonitor.mark(`alignDisplay-${display.id}-start`);
+
   // Get display work area (accounts for taskbar, etc.)
   const workArea = screen.getDisplayMatching(display.bounds).workArea;
   const maxHeight = workArea.height - bottomMargin;
 
   // Sort stickers by their vertical position (top to bottom)
-  stickers.sort((a, b) => {
-    const [, aY] = a.getPosition();
-    const [, bY] = b.getPosition();
-    return aY - bY;
+  // This is more efficient than repeatedly calling getPosition in the sort function
+  const stickersWithPosition = stickers.map(win => {
+    const [x, y] = win.getPosition();
+    return { win, x, y };
   });
 
-  // Use the horizontal position of the first sticker as the alignment point
-  const [firstStickerX] = stickers[0].getPosition();
+  stickersWithPosition.sort((a, b) => a.y - b.y);
 
-  let baseX = firstStickerX;
+  // Use the horizontal position of the first sticker as the alignment point
+  const baseX = stickersWithPosition[0].x;
   let currentY = workArea.y + gridSize;
   let maxWidthInColumn = 0;
 
+  // Pre-calculate sizes to avoid repeated calls to getSize
+  const stickerSizes = stickersWithPosition.map(({ win }) => {
+    return win.getSize();
+  });
+
   // Position each sticker
-  stickers.forEach((win, index) => {
-    const [winWidth, winHeight] = win.getSize();
+  stickersWithPosition.forEach(({ win }, index) => {
+    const [winWidth, winHeight] = stickerSizes[index];
 
     // Start a new column if this sticker would exceed screen height
     if (currentY + winHeight > workArea.y + maxHeight && index > 0) {
-      baseX += maxWidthInColumn + gridSize;
       currentY = workArea.y + gridSize;
       maxWidthInColumn = 0;
     }
 
+    // Calculate the new position
+    const newX = baseX + (maxWidthInColumn > 0 ? maxWidthInColumn + gridSize : 0);
+
     // Position the sticker
-    win.setPosition(baseX, currentY);
+    win.setPosition(newX, currentY);
 
     // Update tracking variables
     maxWidthInColumn = Math.max(maxWidthInColumn, winWidth);
     currentY += winHeight + gridSize;
   });
+
+  performanceMonitor.measure(`alignDisplay-${display.id}`, `alignDisplay-${display.id}-start`);
 }

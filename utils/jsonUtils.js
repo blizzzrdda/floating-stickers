@@ -1,6 +1,20 @@
 import fs from 'fs';
 import path from 'path';
-import { debug, info, warn, error } from './debugUtils.js';
+import { Logger } from './logger.js';
+import {
+  ensureDirectoryExists,
+  createFileBackup,
+  safeReadFile,
+  safeWriteFile
+} from './fileUtils.js';
+import {
+  isObject,
+  isArray,
+  isValidJSON
+} from './validationUtils.js';
+
+// Create a logger for JSON operations
+const logger = new Logger({ category: 'JsonUtils' });
 
 /**
  * Safely reads and parses a JSON file with comprehensive error handling
@@ -9,72 +23,73 @@ import { debug, info, warn, error } from './debugUtils.js';
  * @returns {Promise<any>} - Parsed JSON data or default value
  */
 async function safeReadJSON(filePath, defaultValue = {}) {
-  const category = 'JsonUtils';
-  debug(category, `Reading JSON file: ${filePath}`);
+  logger.debug(`Reading JSON file: ${filePath}`);
 
   try {
-    if (!fs.existsSync(filePath)) {
-      info(category, `File doesn't exist, will use default value: ${filePath}`);
+    // Read file content
+    const data = await safeReadFile(filePath);
+
+    // If file doesn't exist or couldn't be read
+    if (data === null) {
+      logger.info(`File doesn't exist or couldn't be read, will use default value: ${filePath}`);
       return defaultValue;
     }
 
-    debug(category, `File exists, reading content: ${filePath}`);
-    const data = await fs.promises.readFile(filePath, 'utf8');
-
+    // If file is empty
     if (!data || data.trim() === '') {
-      warn(category, `Empty file found: ${filePath}, will use default value`);
+      logger.warn(`Empty file found: ${filePath}, will use default value`);
       return defaultValue;
     }
 
-    debug(category, `File content length: ${data.length} bytes`);
+    logger.debug(`File content length: ${data.length} bytes`);
 
     try {
-      debug(category, `Attempting to parse JSON from: ${filePath}`);
+      logger.debug(`Attempting to parse JSON from: ${filePath}`);
       const parsed = JSON.parse(data);
 
       // Log the structure of the parsed data
       if (Array.isArray(parsed)) {
-        debug(category, `Successfully parsed JSON array with ${parsed.length} items`);
+        logger.debug(`Successfully parsed JSON array with ${parsed.length} items`);
         if (parsed.length > 0) {
-          debug(category, `First item sample:`, parsed[0]);
+          logger.debug(`First item sample:`, parsed[0]);
         }
       } else {
-        debug(category, `Successfully parsed JSON object with ${Object.keys(parsed).length} keys`);
+        logger.debug(`Successfully parsed JSON object with ${Object.keys(parsed).length} keys`);
       }
 
       return parsed;
     } catch (parseError) {
-      error(category, `Error parsing JSON from ${filePath}:`, parseError);
-      error(category, `Raw data that failed to parse (first 100 chars): ${data.substring(0, 100)}...`);
+      logger.error(`Error parsing JSON from ${filePath}:`, parseError);
+      logger.error(`Raw data that failed to parse (first 100 chars): ${data.substring(0, 100)}...`);
 
       // Create backup of corrupted file
-      try {
-        const backupPath = `${filePath}.corrupt-${Date.now()}`;
-        await fs.promises.writeFile(backupPath, data);
-        info(category, `Created backup of corrupted file at ${backupPath}`);
-      } catch (backupError) {
-        error(category, `Failed to create backup of corrupted file:`, backupError);
-      }
+      await createFileBackup(filePath, 'corrupt');
 
-      // Try to delete and recreate the file
-      try {
-        await fs.promises.unlink(filePath);
-        await fs.promises.writeFile(filePath, JSON.stringify(defaultValue, null, 2));
-        info(category, `Recreated ${filePath} with default values`);
-      } catch (recreateError) {
-        error(category, `Failed to recreate ${filePath}:`, recreateError);
+      // Try to recreate the file with default values
+      const jsonString = JSON.stringify(defaultValue, null, 2);
+      const success = await safeWriteFile(filePath, jsonString);
+
+      if (success) {
+        logger.info(`Recreated ${filePath} with default values`);
+      } else {
+        logger.error(`Failed to recreate ${filePath}`);
       }
 
       return defaultValue;
     }
-  } catch (error) {
-    error(category, `Error accessing ${filePath}:`, error);
-    try {
-      await fs.promises.writeFile(filePath, JSON.stringify(defaultValue, null, 2));
-      info(category, `Created new file at ${filePath} with default values after access error`);
-    } catch (writeError) {
-      error(category, `Failed to create new file after access error:`, writeError);
+  } catch (err) {
+    logger.error(`Error accessing ${filePath}:`, err);
+
+    // Try to create a new file with default values
+    const jsonString = JSON.stringify(defaultValue, null, 2);
+    const success = await safeWriteFile(filePath, jsonString);
+
+    if (success) {
+      logger.info(`Created new file at ${filePath} with default values after access error`);
+    } else {
+      logger.error(`Failed to create new file after access error`);
     }
+
     return defaultValue;
   }
 }
@@ -86,54 +101,53 @@ async function safeReadJSON(filePath, defaultValue = {}) {
  * @returns {Promise<boolean>} - Success status
  */
 async function safeWriteJSON(filePath, data) {
-  const category = 'JsonUtils';
-  debug(category, `Writing JSON to file: ${filePath}`);
+  logger.debug(`Writing JSON to file: ${filePath}`);
 
   try {
     // Create a backup of the existing file if it exists
     if (fs.existsSync(filePath)) {
-      try {
-        const backupPath = `${filePath}.backup-${Date.now()}`;
-        await fs.promises.copyFile(filePath, backupPath);
-        debug(category, `Created backup before write: ${backupPath}`);
-      } catch (backupError) {
-        warn(category, `Failed to create backup before write: ${filePath}`, backupError);
-      }
+      await createFileBackup(filePath, 'pre-write');
     }
 
     // Log data structure before writing
     if (Array.isArray(data)) {
-      debug(category, `Writing JSON array with ${data.length} items`);
+      logger.debug(`Writing JSON array with ${data.length} items`);
       if (data.length > 0) {
-        debug(category, `First item sample:`, data[0]);
+        logger.debug(`First item sample:`, data[0]);
       }
     } else {
-      debug(category, `Writing JSON object with ${Object.keys(data).length} keys`);
+      logger.debug(`Writing JSON object with ${Object.keys(data).length} keys`);
     }
 
     // Write data directly to a string first to validate it
-    debug(category, `Stringifying data for validation`);
+    logger.debug(`Stringifying data for validation`);
     const jsonString = JSON.stringify(data, null, 2);
-    debug(category, `Stringified data length: ${jsonString.length} bytes`);
+    logger.debug(`Stringified data length: ${jsonString.length} bytes`);
 
     // Validate the JSON
     try {
-      debug(category, `Validating JSON string`);
+      logger.debug(`Validating JSON string`);
       JSON.parse(jsonString);
-      debug(category, `JSON validation successful`);
+      logger.debug(`JSON validation successful`);
     } catch (validateError) {
-      error(category, `Attempted to write invalid JSON to ${filePath}`, validateError);
-      error(category, `Invalid data:`, data);
+      logger.error(`Attempted to write invalid JSON to ${filePath}`, validateError);
+      logger.error(`Invalid data:`, data);
       return false;
     }
 
     // Write the data directly to the file
-    debug(category, `Writing validated JSON to file: ${filePath}`);
-    await fs.promises.writeFile(filePath, jsonString, { encoding: 'utf8', flag: 'w' });
-    info(category, `Successfully wrote JSON to file: ${filePath}`);
-    return true;
+    logger.debug(`Writing validated JSON to file: ${filePath}`);
+    const success = await safeWriteFile(filePath, jsonString, { encoding: 'utf8' });
+
+    if (success) {
+      logger.info(`Successfully wrote JSON to file: ${filePath}`);
+      return true;
+    } else {
+      logger.error(`Failed to write JSON to file: ${filePath}`);
+      return false;
+    }
   } catch (err) {
-    error(category, `Error writing to ${filePath}:`, err);
+    logger.error(`Error writing to ${filePath}:`, err);
     return false;
   }
 }
@@ -144,25 +158,8 @@ async function safeWriteJSON(filePath, data) {
  * @returns {Promise<boolean>} - Success status
  */
 async function safeDeleteJSON(filePath) {
-  try {
-    if (fs.existsSync(filePath)) {
-      // Create backup before deletion
-      try {
-        const backupPath = `${filePath}.deleted-${Date.now()}`;
-        await fs.promises.copyFile(filePath, backupPath);
-        console.log(`Created backup before deletion: ${backupPath}`);
-      } catch (backupError) {
-        console.warn(`Failed to create backup before deletion: ${filePath}`, backupError);
-      }
-
-      await fs.promises.unlink(filePath);
-      return true;
-    }
-    return false; // File didn't exist, nothing to delete
-  } catch (error) {
-    console.error(`Error deleting ${filePath}:`, error);
-    return false;
-  }
+  logger.debug(`Attempting to delete JSON file: ${filePath}`);
+  return safeDeleteFile(filePath, true);
 }
 
 /**
@@ -172,17 +169,8 @@ async function safeDeleteJSON(filePath) {
  * @returns {Promise<string|null>} - Path to the backup file or null if failed
  */
 async function backupJSONFile(filePath, reason = 'backup') {
-  try {
-    if (fs.existsSync(filePath)) {
-      const backupPath = `${filePath}.${reason}-${Date.now()}`;
-      await fs.promises.copyFile(filePath, backupPath);
-      return backupPath;
-    }
-    return null; // File doesn't exist, no backup created
-  } catch (error) {
-    console.error(`Error backing up ${filePath}:`, error);
-    return null;
-  }
+  logger.debug(`Attempting to backup JSON file: ${filePath} (reason: ${reason})`);
+  return createFileBackup(filePath, reason);
 }
 
 /**
@@ -191,8 +179,13 @@ async function backupJSONFile(filePath, reason = 'backup') {
  * @returns {boolean} - True if data is valid JSON, false otherwise
  */
 function validateJSONData(data) {
-  // null is a valid JSON value
-  return data === null || (typeof data === 'object' || Array.isArray(data));
+  try {
+    // null is a valid JSON value
+    return data === null || isObject(data) || isArray(data);
+  } catch (err) {
+    logger.error('Error validating JSON data:', err);
+    return false;
+  }
 }
 
 /**
@@ -201,7 +194,12 @@ function validateJSONData(data) {
  * @returns {boolean} - True if data is an array, false otherwise
  */
 function validateArrayData(data) {
-  return Array.isArray(data);
+  try {
+    return isArray(data, 'Array data');
+  } catch (err) {
+    logger.error('Error validating array data:', err);
+    return false;
+  }
 }
 
 export {

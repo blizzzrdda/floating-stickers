@@ -93,7 +93,8 @@
             border: 1px dashed rgba(0, 0, 0, 0.2);
         }
 
-        .sticker-content:empty::before {
+        /* Use a class to control the placeholder instead of :empty pseudo-element */
+        .sticker-content.empty::before {
             content: 'Type here...';
             color: #999;
             font-style: italic;
@@ -197,6 +198,49 @@
     </div>
 
     <script>
+        // Import render optimization utilities
+        const throttle = (func, limit) => {
+            let inThrottle;
+            let lastFunc;
+            let lastRan;
+
+            return function(...args) {
+                const context = this;
+
+                if (!inThrottle) {
+                    func.apply(context, args);
+                    lastRan = Date.now();
+                    inThrottle = true;
+                } else {
+                    clearTimeout(lastFunc);
+                    lastFunc = setTimeout(function() {
+                        if (Date.now() - lastRan >= limit) {
+                            func.apply(context, args);
+                            lastRan = Date.now();
+                        }
+                    }, limit - (Date.now() - lastRan));
+                }
+            };
+        };
+
+        const debounce = (func, wait, immediate = false) => {
+            let timeout;
+
+            return function(...args) {
+                const context = this;
+                const later = function() {
+                    timeout = null;
+                    if (!immediate) func.apply(context, args);
+                };
+
+                const callNow = immediate && !timeout;
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+
+                if (callNow) func.apply(context, args);
+            };
+        };
+
         // Elements
         const sticker = document.querySelector('.sticker');
         const closeBtn = document.querySelector('.sticker-close');
@@ -224,6 +268,15 @@
 
         // Auto-focus on content area when page loads for new stickers
         window.addEventListener('DOMContentLoaded', () => {
+            // Set the empty class if there's no content
+            if (!content.textContent || content.textContent.trim().length === 0) {
+                debugLog('Sticker', 'Initial content is empty, adding empty class');
+                content.classList.add('empty');
+            } else {
+                debugLog('Sticker', 'Initial content is not empty, removing empty class');
+                content.classList.remove('empty');
+            }
+
             // Focus the content area
             content.focus();
 
@@ -246,87 +299,208 @@
             console.log(`[${category}] ${message}`, data !== null ? data : '');
         }
 
-        // Receive sticker data from main process
+        // Receive sticker data from main process with enhanced error handling
         window.stickerAPI.onStickerData(data => {
-            debugLog('Sticker', `Received sticker data: ID=${data.id}`);
-            debugLog('Sticker', `Content received: ${data.content ? 'Yes' : 'No'}, Length: ${data.content ? data.content.length : 0}`);
-            debugLog('Sticker', `Content preview: "${data.content ? data.content.substring(0, 30) : ''}${data.content && data.content.length > 30 ? '...' : ''}"`);
+            try {
+                // Validate received data
+                if (!data || typeof data !== 'object') {
+                    console.error(`[ERROR] Received invalid sticker data (not an object)`, data);
+                    debugLog('Sticker', 'ERROR: Received invalid sticker data (not an object)', data);
+                    return;
+                }
 
-            // Store the data
-            stickerData = data;
+                if (!data.id) {
+                    console.error(`[ERROR] Received sticker data without ID`, data);
+                    debugLog('Sticker', 'ERROR: Received sticker data without ID', data);
+                    return;
+                }
 
-            // Use textContent instead of innerHTML to ensure only plain text
-            debugLog('Sticker', 'Setting content.textContent with received data');
-            content.textContent = data.content || '';
-            debugLog('Sticker', `Content element after setting: Length=${content.textContent.length}`);
+                debugLog('Sticker', `Received sticker data: ID=${data.id}`);
+                debugLog('Sticker', `Content received: ${data.content ? 'Yes' : 'No'}, Length: ${data.content ? data.content.length : 0}`);
+                debugLog('Sticker', `Content preview: "${data.content ? data.content.substring(0, 30) : ''}${data.content && data.content.length > 30 ? '...' : ''}"`);
 
-            // Apply width and height directly
-            if (data.size) {
-                debugLog('Sticker', `Setting size: ${data.size.width}x${data.size.height}`);
-                document.body.style.width = `${data.size.width}px`;
-                document.body.style.height = `${data.size.height}px`;
+                // Sanitize and store the data
+                const sanitizedData = {
+                    id: String(data.id),
+                    content: typeof data.content === 'string' ? data.content : '',
+                    position: {
+                        x: typeof data.position?.x === 'number' ? data.position.x : 0,
+                        y: typeof data.position?.y === 'number' ? data.position.y : 0
+                    },
+                    size: {
+                        width: typeof data.size?.width === 'number' ? data.size.width : 250,
+                        height: typeof data.size?.height === 'number' ? data.size.height : 80
+                    }
+                };
+
+                stickerData = sanitizedData;
+                debugLog('Sticker', 'Sanitized and stored sticker data');
+
+                // Use textContent instead of innerHTML to ensure only plain text
+                debugLog('Sticker', `Setting content.textContent with received data, length=${sanitizedData.content ? sanitizedData.content.length : 0}`);
+                content.textContent = sanitizedData.content;
+
+                // Add or remove the 'empty' class based on content
+                if (sanitizedData.content && sanitizedData.content.trim().length > 0) {
+                    debugLog('Sticker', 'Content is not empty, removing empty class');
+                    content.classList.remove('empty');
+                } else {
+                    debugLog('Sticker', 'Content is empty, adding empty class');
+                    content.classList.add('empty');
+                }
+
+                debugLog('Sticker', `Content element after setting: Length=${content.textContent.length}`);
+
+                // Apply width and height directly with validation
+                const width = Math.max(100, Math.min(2000, sanitizedData.size.width)); // Constrain between 100-2000px
+                const height = Math.max(80, Math.min(2000, sanitizedData.size.height)); // Constrain between 80-2000px
+
+                debugLog('Sticker', `Setting size: ${width}x${height}`);
+                document.body.style.width = `${width}px`;
+                document.body.style.height = `${height}px`;
+
+                // Update the stored size with validated values
+                stickerData.size.width = width;
+                stickerData.size.height = height;
+
                 debugLog('Sticker', 'Adjusting height based on content');
                 adjustHeight(); // Still adjust height for content if needed
-            }
 
-            // If this is a new sticker (no content), focus the editor
-            if (!data.content) {
-                debugLog('Sticker', 'New sticker detected, focusing editor');
-                content.focus();
-            }
+                // If this is a new sticker (no content), focus the editor
+                if (!sanitizedData.content) {
+                    debugLog('Sticker', 'New sticker detected, focusing editor');
+                    content.focus();
+                }
 
-            // Ensure close button is visible after loading data
-            if (closeBtn) {
-                debugLog('Sticker', 'Ensuring close button is visible');
-                closeBtn.style.display = 'flex';
-                closeBtn.style.visibility = 'visible';
-                closeBtn.style.opacity = '1';
-            }
-
-            // Implement a more robust content loading mechanism with multiple verification steps
-            debugLog('Sticker', 'Setting up content verification sequence');
-
-            // Store the original content for verification
-            const originalContent = data.content || '';
-
-            // First verification after a short delay
-            setTimeout(() => {
+                // Ensure close button is visible after loading data
                 if (closeBtn) {
-                    debugLog('Sticker', 'First timeout fired, ensuring close button is visible');
+                    debugLog('Sticker', 'Ensuring close button is visible');
                     closeBtn.style.display = 'flex';
                     closeBtn.style.visibility = 'visible';
                     closeBtn.style.opacity = '1';
                 }
 
-                // Verify content is still present
-                debugLog('Sticker', `First content verification: Length=${content.textContent.length}`);
-                if (originalContent && content.textContent !== originalContent) {
-                    debugLog('Sticker', 'WARNING: Content mismatch at first check, restoring');
-                    content.textContent = originalContent;
-                }
-            }, 50);
+                // Implement a more robust content loading mechanism with multiple verification steps
+                debugLog('Sticker', 'Setting up enhanced content verification sequence');
 
-            // Second verification after a longer delay
-            setTimeout(() => {
-                debugLog('Sticker', `Second content verification: Length=${content.textContent.length}`);
-                if (originalContent && content.textContent !== originalContent) {
-                    debugLog('Sticker', 'WARNING: Content mismatch at second check, restoring');
-                    content.textContent = originalContent;
-                }
-            }, 200);
+                // Store the original content for verification
+                const originalContent = sanitizedData.content;
+                debugLog('Sticker', `Original content for verification: length=${originalContent ? originalContent.length : 0}`);
 
-            // Final verification after the window should be fully rendered
-            setTimeout(() => {
-                debugLog('Sticker', `Final content verification: Length=${content.textContent.length}`);
-                if (originalContent && content.textContent !== originalContent) {
-                    debugLog('Sticker', 'WARNING: Content mismatch at final check, restoring');
-                    content.textContent = originalContent;
+                let verificationAttempts = 0;
+                const maxVerificationAttempts = 5;
 
-                    // Force a save to ensure content is persisted
-                    stickerData.content = originalContent;
-                    saveSticker();
+                // Create a verification function that can be called multiple times
+                const verifyContent = (attempt, delay) => {
+                    setTimeout(() => {
+                        try {
+                            // Always ensure close button is visible
+                            if (closeBtn) {
+                                closeBtn.style.display = 'flex';
+                                closeBtn.style.visibility = 'visible';
+                                closeBtn.style.opacity = '1';
+                            }
+
+                            // Verify content is still present
+                            debugLog('Sticker', `Content verification #${attempt}: Length=${content.textContent.length}`);
+
+                            // Check if content matches what we expect
+                            if (originalContent && content.textContent !== originalContent) {
+                                debugLog('Sticker', `WARNING: Content mismatch at check #${attempt}, restoring`);
+                                content.textContent = originalContent;
+
+                                // Update the empty class based on content
+                                if (originalContent && originalContent.trim().length > 0) {
+                                    debugLog('Sticker', 'Restored content is not empty, removing empty class');
+                                    content.classList.remove('empty');
+                                } else {
+                                    debugLog('Sticker', 'Restored content is empty, adding empty class');
+                                    content.classList.add('empty');
+                                }
+
+                                // Force a save to ensure content is persisted
+                                stickerData.content = originalContent;
+                                debugLog('Sticker', 'Forcing save with restored content');
+                                saveSticker();
+
+                                // Schedule another verification if we haven't reached the limit
+                                if (attempt < maxVerificationAttempts) {
+                                    verificationAttempts++;
+                                    const nextDelay = delay * 1.5; // Increase delay for next attempt
+                                    debugLog('Sticker', `Scheduling verification #${attempt + 1} in ${nextDelay}ms`);
+                                    verifyContent(attempt + 1, nextDelay);
+                                }
+                            } else {
+                                debugLog('Sticker', `Content verification #${attempt} successful`);
+
+                                // If this is the first successful verification, schedule one more
+                                // delayed check to ensure stability
+                                if (attempt === 1) {
+                                    debugLog('Sticker', 'Scheduling final verification check');
+                                    verifyContent(maxVerificationAttempts, 500); // Final check
+                                }
+                            }
+                        } catch (err) {
+                            debugLog('Sticker', `ERROR in verification #${attempt}:`, err);
+
+                            // Try to recover
+                            try {
+                                debugLog('Sticker', 'Attempting recovery with original content');
+                                content.textContent = originalContent;
+
+                                // Update the empty class based on content
+                                if (originalContent && originalContent.trim().length > 0) {
+                                    debugLog('Sticker', 'Recovery content is not empty, removing empty class');
+                                    content.classList.remove('empty');
+                                } else {
+                                    debugLog('Sticker', 'Recovery content is empty, adding empty class');
+                                    content.classList.add('empty');
+                                }
+
+                                stickerData.content = originalContent;
+                                saveSticker();
+                            } catch (recoveryErr) {
+                                debugLog('Sticker', 'ERROR during recovery attempt:', recoveryErr);
+                            }
+                        }
+                    }, delay);
+                };
+
+                // Start the verification sequence
+                debugLog('Sticker', 'Starting verification sequence, first check after 50ms');
+                verifyContent(1, 50); // First check after 50ms
+            } catch (err) {
+                debugLog('Sticker', 'ERROR: Exception in sticker data handler:', err);
+
+                // Try to initialize with default values
+                try {
+                    stickerData = {
+                        id: data?.id || Date.now().toString(),
+                        content: '',
+                        position: { x: 0, y: 0 },
+                        size: { width: 250, height: 80 }
+                    };
+
+                    content.textContent = '';
+                    // Add the empty class since we're setting empty content
+                    debugLog('Sticker', 'Setting empty content in recovery, adding empty class');
+                    content.classList.add('empty');
+
+                    document.body.style.width = `${stickerData.size.width}px`;
+                    document.body.style.height = `${stickerData.size.height}px`;
+
+                    // Ensure close button is visible
+                    if (closeBtn) {
+                        closeBtn.style.display = 'flex';
+                        closeBtn.style.visibility = 'visible';
+                        closeBtn.style.opacity = '1';
+                    }
+
+                    debugLog('Sticker', 'Recovered with default values');
+                } catch (recoveryErr) {
+                    debugLog('Sticker', 'CRITICAL ERROR: Failed to recover:', recoveryErr);
                 }
-            }, 500);
+            }
         });
 
         // Listen for position updates from the main process
@@ -397,18 +571,35 @@
                     window.close();
                 })
                 .catch(err => {
-                    console.error('Failed to remove sticker:', err);
+                    debugLog('Sticker', 'ERROR: Failed to remove sticker:', err);
                 });
         });
 
-        // Content change
-        content.addEventListener('input', () => {
+        // Content change - use debounce to reduce frequent updates
+        content.addEventListener('input', debounce(() => {
             // Sanitize content to ensure only plain text
             sanitizeContent();
 
-            // Use a small delay to allow the browser to render the content
-            setTimeout(adjustHeight, 0);
-        });
+            // Use requestAnimationFrame for better performance
+            requestAnimationFrame(() => {
+                adjustHeight();
+
+                // Update sticker data
+                stickerData.content = content.textContent;
+
+                // Update the empty class based on content
+                if (content.textContent && content.textContent.trim().length > 0) {
+                    debugLog('Sticker', 'Content changed and is not empty, removing empty class');
+                    content.classList.remove('empty');
+                } else {
+                    debugLog('Sticker', 'Content changed and is empty, adding empty class');
+                    content.classList.add('empty');
+                }
+
+                // Save changes with throttling to reduce disk I/O
+                debouncedSaveSticker();
+            });
+        }, 100)); // 100ms debounce
 
         // Function to sanitize content and ensure only plain text
         function sanitizeContent() {
@@ -437,19 +628,26 @@
             }
         });
 
-        content.addEventListener('blur', () => {
+        // Use debounce for blur events to avoid excessive processing
+        content.addEventListener('blur', debounce(() => {
             debugLog('Sticker', 'Content blur event fired');
-            debugLog('Sticker', `Current content element text length: ${content.textContent.length}`);
 
             // Store the plain text content only
             const previousContent = stickerData.content;
             stickerData.content = content.textContent;
 
-            // Log content change
+            // Update the empty class based on content
+            if (content.textContent && content.textContent.trim().length > 0) {
+                debugLog('Sticker', 'Content on blur is not empty, removing empty class');
+                content.classList.remove('empty');
+            } else {
+                debugLog('Sticker', 'Content on blur is empty, adding empty class');
+                content.classList.add('empty');
+            }
+
+            // Only log if content actually changed
             if (previousContent !== stickerData.content) {
                 debugLog('Sticker', `Content changed: ${previousContent ? previousContent.length : 0} chars -> ${stickerData.content ? stickerData.content.length : 0} chars`);
-            } else {
-                debugLog('Sticker', 'Content unchanged');
             }
 
             // Update size based on precise measurements
@@ -459,13 +657,14 @@
                 height: parseInt(document.body.style.height)
             };
 
-            // Log size change
+            // Only log if size actually changed
             if (previousSize.width !== stickerData.size.width || previousSize.height !== stickerData.size.height) {
                 debugLog('Sticker', `Size changed: ${previousSize.width}x${previousSize.height} -> ${stickerData.size.width}x${stickerData.size.height}`);
             }
 
-            saveSticker();
-        });
+            // Use the debounced save function
+            debouncedSaveSticker();
+        }, 200)); // 200ms debounce
 
         // Prevent pasting formatted content
         content.addEventListener('paste', (event) => {
@@ -479,23 +678,89 @@
             document.execCommand('insertText', false, plainText);
         });
 
-        // Save sticker data to main process
-        function saveSticker() {
-            debugLog('Sticker', `Saving sticker: ID=${stickerData.id}`);
-            debugLog('Sticker', `Content being saved: Length=${stickerData.content ? stickerData.content.length : 0}`);
-            debugLog('Sticker', `Content preview: "${stickerData.content ? stickerData.content.substring(0, 30) : ''}${stickerData.content && stickerData.content.length > 30 ? '...' : ''}"`);
+        // Create a debounced version of saveSticker to reduce disk I/O
+        const debouncedSaveSticker = debounce((retryCount = 0) => {
+            saveSticker(retryCount);
+        }, 1000); // 1 second debounce
 
-            window.stickerAPI.updateSticker(stickerData)
-                .then(result => {
-                    debugLog('Sticker', `Save result: ${result.success ? 'Success' : 'Failed'}`, result);
+        // Save sticker data to main process with enhanced error handling and retry
+        function saveSticker(retryCount = 0) {
+            const maxRetries = 3;
+            const retryDelay = 300; // ms
 
-                    if (!result.success) {
-                        debugLog('Sticker', 'WARNING: Failed to save sticker data', result.error);
-                    }
-                })
-                .catch(err => {
-                    debugLog('Sticker', 'ERROR: Failed to update sticker:', err);
+            try {
+                debugLog('Sticker', `saveSticker called with retryCount=${retryCount}`);
+
+                // Validate sticker data before saving
+                if (!stickerData || typeof stickerData !== 'object') {
+                    debugLog('Sticker', 'ERROR: Cannot save invalid sticker data (not an object)', stickerData);
+                    return;
+                }
+
+                if (!stickerData.id) {
+                    debugLog('Sticker', 'ERROR: Cannot save sticker without ID', stickerData);
+                    return;
+                }
+
+                // Ensure content is a string
+                if (typeof stickerData.content !== 'string') {
+                    debugLog('Sticker', `WARNING: Content is not a string (${typeof stickerData.content}), converting to empty string`);
+                    stickerData.content = '';
+                }
+
+                // Only log on first attempt to reduce console spam
+                if (retryCount === 0) {
+                    debugLog('Sticker', `Saving sticker: ID=${stickerData.id}`);
+                    debugLog('Sticker', `Content being saved: Length=${stickerData.content ? stickerData.content.length : 0}`);
+                } else {
+                    debugLog('Sticker', `Retry attempt ${retryCount + 1}/${maxRetries + 1} for sticker ID=${stickerData.id}`);
+                }
+
+                // Use requestAnimationFrame to ensure UI updates are complete before saving
+                requestAnimationFrame(() => {
+                    debugLog('Sticker', 'Calling window.stickerAPI.updateSticker');
+
+                    window.stickerAPI.updateSticker(stickerData)
+                        .then(result => {
+                            if (result.success) {
+                                if (retryCount === 0) {
+                                    debugLog('Sticker', 'Successfully saved sticker data');
+                                }
+                            } else {
+                                debugLog('Sticker', 'WARNING: Failed to save sticker data', result.error);
+
+                                // Retry if we haven't reached the maximum retry count
+                                if (retryCount < maxRetries) {
+                                    debugLog('Sticker', `Retrying save (${retryCount + 1}/${maxRetries})...`);
+                                    setTimeout(() => saveSticker(retryCount + 1), retryDelay * Math.pow(2, retryCount));
+                                } else {
+                                    debugLog('Sticker', 'ERROR: Maximum retry attempts reached, giving up');
+                                }
+                            }
+                        })
+                        .catch(err => {
+                            debugLog('Sticker', 'ERROR: Failed to update sticker:', err);
+
+                            // Retry if we haven't reached the maximum retry count
+                            if (retryCount < maxRetries) {
+                                debugLog('Sticker', `Retrying save after error (${retryCount + 1}/${maxRetries})...`);
+                                setTimeout(() => saveSticker(retryCount + 1), retryDelay * Math.pow(2, retryCount));
+                            } else {
+                                debugLog('Sticker', 'ERROR: Maximum retry attempts reached after error, giving up');
+                            }
+                        });
                 });
+            } catch (err) {
+                debugLog('Sticker', 'ERROR: Exception in saveSticker:', err);
+
+                // Retry if we haven't reached the maximum retry count
+                if (retryCount < maxRetries) {
+                    debugLog('Sticker', `Retrying save after exception (${retryCount + 1}/${maxRetries})...`);
+                    setTimeout(() => saveSticker(retryCount + 1), retryDelay * Math.pow(2, retryCount));
+                } else {
+                    debugLog('Sticker', 'ERROR: Maximum retry attempts reached after exception, giving up');
+                }
+            }
         }
 
         // Handle window resize for sticker size
@@ -514,15 +779,28 @@
             saveSticker();
         }
 
-        // Delay resize event to avoid too many updates
-        let resizeTimeout;
-        window.addEventListener('resize', () => {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(handleWindowResize, 300);
-        });
+        // Use debounce for resize events to improve performance
+        window.addEventListener('resize', debounce(() => {
+            // Use requestAnimationFrame for smoother UI updates
+            requestAnimationFrame(handleWindowResize);
+        }, 300)); // 300ms debounce
 
         // Position tracking is handled by the main process through the 'moved' event
         // and communicated via the 'position-updated' IPC event
+
+        // Listen for content requests from main process (for saving before quit)
+        window.stickerAPI.onGetContent(() => {
+            debugLog('Sticker', `Received content request from main process for sticker ID=${stickerData.id}`);
+
+            // Make sure we have the latest content
+            const currentContent = content.textContent || '';
+            debugLog('Sticker', `Current content length: ${currentContent.length}`);
+
+            // Send the current content back to the main process
+            debugLog('Sticker', 'Sending content back to main process');
+            window.stickerAPI.sendContent(stickerData.id, currentContent);
+            debugLog('Sticker', 'Content sent to main process');
+        });
 
         // ===== Microphone Button and Speech-to-Text Functionality =====
 

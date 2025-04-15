@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { incrementVersion } = require('./versionUtils');
+import { incrementVersion } from './versionUtils.js';
 
 // Get the version type from command-line arguments
 const args = process.argv.slice(2);
@@ -12,4 +12,4 @@ try {
 } catch (error) {
   console.error(`\n❌ Error: ${error.message}\n`);
   process.exit(1);
-} 
+}

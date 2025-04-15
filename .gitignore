@@ -30,6 +30,8 @@ coverage/
 .eslintcache
 .stylelintcache
 .cache/
+.prettierrc.cache
+.eslintcache
 
 # IDE specific files
 .idea/
@@ -66,7 +68,7 @@ out/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
 /test-data
 
 # Added by Claude Task Master
@@ -83,4 +85,4 @@ dev-debug.log
 # OS specific
 # Task files
 tasks.json
-tasks/ 
+tasks/

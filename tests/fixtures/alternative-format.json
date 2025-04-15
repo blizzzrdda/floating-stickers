@@ -1,0 +1,21 @@
+{
+  "stickers": [
+    {
+      "id": "alt-1234567890",
+      "content": "This is a sticker in an alternative format",
+      "x": 100,
+      "y": 200,
+      "width": 250,
+      "height": 80
+    },
+    {
+      "id": "alt-0987654321",
+      "content": "This sticker uses a different structure",
+      "x": 300,
+      "y": 400,
+      "width": 300,
+      "height": 100
+    }
+  ],
+  "version": "alternative"
+}

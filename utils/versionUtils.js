@@ -1,6 +1,6 @@
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
 
 /**
  * Increments the version in package.json
@@ -12,18 +12,18 @@ function incrementVersion(type = 'patch') {
   if (!['patch', 'minor', 'major'].includes(type)) {
     throw new Error(`Invalid version increment type: ${type}. Must be 'patch', 'minor', or 'major'.`);
   }
-  
+
   // Read the package.json file
   const packageJsonPath = path.join(__dirname, '..', 'package.json');
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-  
+
   // Get the current version
   const currentVersion = packageJson.version;
   console.log(`Current version: ${currentVersion}`);
-  
+
   // Parse the version
   const [major, minor, patch] = currentVersion.split('.').map(Number);
-  
+
   // Calculate the new version
   let newVersion;
   if (type === 'major') {
@@ -33,13 +33,13 @@ function incrementVersion(type = 'patch') {
   } else {
     newVersion = `${major}.${minor}.${patch + 1}`;
   }
-  
+
   // Update the package.json with the new version
   packageJson.version = newVersion;
   fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
-  
+
   console.log(`Version incremented from ${currentVersion} to ${newVersion}`);
-  
+
   // Return the new version
   return newVersion;
 }
@@ -67,11 +67,11 @@ function createVersionTag(version) {
 }
 
 // If the script is run directly
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   // Get the version type from command line arguments
   const args = process.argv.slice(2);
   const type = args[0] || 'patch';
-  
+
   try {
     const newVersion = incrementVersion(type);
     console.log(`Successfully updated to version ${newVersion}`);
@@ -81,8 +81,8 @@ if (require.main === module) {
   }
 }
 
-module.exports = {
+export {
   incrementVersion,
   autoIncrementPatchVersion,
   createVersionTag
-}; 
+};

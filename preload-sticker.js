@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+const { contextBridge, ipcRenderer } = require('electron');
 
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
@@ -15,7 +15,10 @@ contextBridge.exposeInMainWorld('stickerAPI', {
 
   // Receive sticker data from main process
   onStickerData: (callback) => {
-    ipcRenderer.on('sticker-data', (_, data) => callback(data));
+    ipcRenderer.on('sticker-data', (_, data) => {
+      console.debug('[Preload] Received sticker-data:', JSON.stringify(data, null, 2));
+      callback(data);
+    });
   },
 
   // Receive position updates from main process (when window is moved)
@@ -65,5 +68,15 @@ contextBridge.exposeInMainWorld('stickerAPI', {
 
   resetPreferences: () => {
     return ipcRenderer.invoke('reset-preferences');
+  },
+
+  // Listen for content requests from main process (for saving before quit)
+  onGetContent: (callback) => {
+    ipcRenderer.on('get-content', () => callback());
+  },
+
+  // Send content back to main process
+  sendContent: (stickerId, content) => {
+    ipcRenderer.send(`content-response-${stickerId}`, content);
   }
 });
